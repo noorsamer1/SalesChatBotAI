@@ -1,0 +1,8 @@
+venv/
+__pycache__/
+*.pyc
+.env
+backend/prompts/system_prompt_original.txt
+backend/prompts/prompt_template.txt
+backend/prompts/llm_prompt.txt
+Read this and DELETE later.txt
