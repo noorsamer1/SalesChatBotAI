@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './chat-ui.css';
 import { v4 as uuidv4 } from 'uuid';
+import BotMessage from './components/bot-message';
 import TextMessage from './components/text-message';
 import ChartMessage from './components/chart-message';
 import TableMessage from './components/table-message';
@@ -98,12 +99,8 @@ export default function ChatUI() {
                             >
                                 {msg.type === 'user' ? (
                                     <span>{msg.text}</span>
-                                ) : msg.data?.type === "chart" ? (
-                                    <ChartMessage data={msg.data} />
-                                ) : msg.data?.type === "table" ? (
-                                    <TableMessage data={msg.data} />
                                 ) : (
-                                    <TextMessage data={msg.data} />
+                                    <BotMessage data={msg.data} />
                                 )}
                             </div>
                         </div>
