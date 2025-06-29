@@ -99,8 +99,6 @@
     width: 30px;
     height: 30px;
     object-fit: contain;
-<<<<<<< HEAD
-=======
 }
 
 /* Table styling */
@@ -154,5 +152,4 @@
     padding: 10px;
     background-color: #1f2937;
     border-radius: 0 0 8px 8px;
->>>>>>> cf8387a3f681dd4250d86f2b01a6247ac826c2c2
 }
