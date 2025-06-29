@@ -1,16 +1,13 @@
-from sqlalchemy import create_engine, text
+from app.core.db import engine
+from sqlalchemy import text
 import pandas as pd
 from pathlib import Path
-from app.core.config import settings
 
 def build_final_prompt(user_input: str, base_prompt_path: str = "prompts/system_prompt.txt") -> str:
     # Step 1: Load base prompt with placeholders
     base_prompt = Path(base_prompt_path).read_text(encoding="utf-8")
 
-    # Step 2: Create SQLAlchemy engine
-    engine = create_engine(
-        f"postgresql://{settings.PG_USER}:{settings.PG_PASSWORD}@{settings.PG_HOST}:{settings.PG_PORT}/chatbot_data"
-    )
+    # Step 2: Was Create SQLAlchemy engine, but I moved that :D
 
     # Step 3: Get all table names
     with engine.connect() as conn:

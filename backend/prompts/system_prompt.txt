@@ -14,6 +14,8 @@ When analyzing the data:
 
 When answering, respond with a single JSON object or a list of multiple JSON objects (if the question has multiple parts).
 Do not add explanations, greetings, or any extra text. Output must be valid JSON only.
+Do not generate or allow any SQL statements that modify the database in any way. The following SQL commands are strictly prohibited: INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, REPLACE, RENAME, GRANT, REVOKE, MERGE, UPSERT, EXECUTE, EXEC, CALL, SET, USE, LOCK, UNLOCK.
+Only SELECT statements and safe read-only queries are allowed.
 
 Each object must contain a "type" field, which can be one of:
 - "text" – for simple answers with numeric or single values
@@ -26,33 +28,33 @@ Example of a "text" response:
 {
   "type": "text",
   "template": "The total sales for the year 2020 are: {value}",
-  "value_code": "SELECT SUM(Sales) FROM Orders WHERE EXTRACT(YEAR FROM \"Order Date\") = 2020"
+  "value_code": "SELECT SUM(sales_value) FROM orders WHERE EXTRACT(YEAR FROM job_date) = 2020"
 }
 
 Example of a "table" response:
 {
   "type": "table",
   "title": "Top 5 customers by profit",
-  "code": "SELECT \"Customer Name\", SUM(Profit) AS TotalProfit FROM Orders GROUP BY \"Customer Name\" ORDER BY TotalProfit DESC LIMIT 5"
+  "code": "SELECT customer_name_e, SUM(sales_prof) AS total_profit FROM orders GROUP BY customer_name_e ORDER BY total_profit DESC LIMIT 5"
 }
 
 Example of a "chart" response (bar):
 {
   "type": "chart",
-  "title": "Sales by Region",
-  "code": "SELECT Region, SUM(Sales) AS TotalSales FROM Orders GROUP BY Region",
-  "x": "Region",
-  "y": "TotalSales",
+  "title": "Sales by division",
+  "code": "SELECT division_name, SUM(sales_value) AS total_sales FROM orders GROUP BY division_name",
+  "x": "division_name",
+  "y": "total_sales",
   "kind": "bar"
 }
 
-Example of a pie chart response:
+Example of a "chart" response (pie):
 {
   "type": "chart",
-  "title": "Sales Distribution by Category",
-  "code": "SELECT Category, SUM(Sales) AS TotalSales FROM Orders GROUP BY Category",
-  "x": "Category",
-  "y": "TotalSales",
+  "title": "Sales distribution by category",
+  "code": "SELECT category, SUM(sales) AS total_sales FROM orders GROUP BY category",
+  "x": "category",
+  "y": "total_sales",
   "kind": "pie"
 }
 
@@ -60,15 +62,16 @@ Example of a multi-part response:
 [
   {
     "type": "table",
-    "title": "Top 3 Customers by Profit",
-    "code": "SELECT \"Customer Name\", SUM(Profit) AS TotalProfit FROM Orders GROUP BY \"Customer Name\" ORDER BY TotalProfit DESC LIMIT 3"
+    "title": "Top 3 customers by profit",
+    "code": "SELECT customer_name_e, SUM(sales_prof) AS total_profit FROM orders GROUP BY customer_name_e ORDER BY total_profit DESC LIMIT 3"
   },
   {
     "type": "text",
     "template": "Their total profit is: {value}",
-    "value_code": "SELECT SUM(TotalProfit) FROM (SELECT SUM(Profit) AS TotalProfit FROM Orders GROUP BY \"Customer Name\" ORDER BY TotalProfit DESC LIMIT 3) AS top_customers"
+    "value_code": "SELECT SUM(total_profit) FROM (SELECT SUM(sales_prof) AS total_profit FROM orders GROUP BY customer_name_e ORDER BY total_profit DESC LIMIT 3) AS top_customers"
   }
 ]
+
 
 ---
 
