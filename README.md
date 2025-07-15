@@ -1,3 +1,3 @@
-# Version 1 of the Chatbot
+# Version 2 of the Chatbot
 
-Insert message to explain chatbot here later.
+We will be using React and FastAPI instead of Streamlit because Streamlit is difficult to debug and make changes to.
