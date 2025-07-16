@@ -1,10 +1,3 @@
-<<<<<<< HEAD
-import Plot from 'react-plotly.js';
-
-export default function ChartMessage({ data }) {
-    const { chart_data, kind, title } = data;
-
-=======
 import React, { useState, useEffect } from 'react';
 
 export default function ChartMessage({ data }) {
@@ -72,7 +65,6 @@ export default function ChartMessage({ data }) {
         );
     }
 
->>>>>>> master
     const plotData = kind === "pie" ? [{
         type: "pie",
         labels: chart_data.labels,
@@ -94,12 +86,6 @@ export default function ChartMessage({ data }) {
         plot_bgcolor: "#1f2937",
         paper_bgcolor: "#111827",
         font: { color: "#ffffff" },
-<<<<<<< HEAD
-    };
-
-    return <Plot data={plotData} layout={layout} style={{ width: "100%", height: "100%" }} />;
-}
-=======
         margin: { t: 50, r: 50, b: 50, l: 50 }
     };
 
@@ -114,4 +100,3 @@ export default function ChartMessage({ data }) {
         </div>
     );
 }
->>>>>>> master

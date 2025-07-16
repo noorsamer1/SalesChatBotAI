@@ -1,27 +1,3 @@
-<<<<<<< HEAD
-from app.core.db import engine
-from sqlalchemy import text
-
-def handle_text(response):
-    code = response.get("value_code", "").strip()
-    value = ""
-
-    if code:
-        try:
-            with engine.connect() as conn:
-                result = conn.execute(text(code))
-                row = result.fetchone()
-                value = row[0] if row else ""
-        except Exception as e:
-            value = f"[DB ERROR: {e}]"
-
-    final_text = response["template"].format(value=value)
-
-    return {
-        "type": "text",
-        "text": final_text
-    }
-=======
 from .handlersCommnFunction import *
 import regex as re
 
@@ -143,4 +119,3 @@ def handle_text(response):
         if "template" not in result and "text" in result:
             result["template"] = result["text"]
         return result
->>>>>>> master
