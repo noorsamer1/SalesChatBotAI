@@ -1,0 +1,48 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  /*   
+  Old font-family
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  */
+  --primary: #7e3af2;
+  --secondary: #f97316;
+  --bg-dark: #0d1117;
+  --bg-light: #f5f7fa;
+  --surface-dark: #1e293b;
+  --surface-light: #ffffff;
+  --text-light: #ffffff;
+  --text-dark: #1f2937;
+
+  --bg: var(--bg-dark);
+  --surface: var(--surface-dark);
+  --text: var(--text-light);
+}
+
+body {
+  margin: 0;
+  font-family: inherit;
+}
+
+body.light {
+  background-color: #f5f7fa;
+  color: #1f2937;
+}
+
+body.dark {
+  background-color: #0d1117;
+  color: #ffffff;
+  background-color: var(--bg-light);
+  color: var(--text-dark);
+  --bg: var(--bg-light);
+  --surface: var(--surface-light);
+  --text: var(--text-dark);
+}
+
+body.dark {
+  background-color: var(--bg-dark);
+  color: var(--text-light);
+  --bg: var(--bg-dark);
+  --surface: var(--surface-dark);
+  --text: var(--text-light);
+}

@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+.env
+prompts/system_prompt_original.txt
+prompts/prompt_template.txt
+prompts/llm_prompt.txt
