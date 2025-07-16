@@ -1,0 +1,56 @@
+my schema in chatbotsales
+
+  table_name   |      column_name      |          data_type
+---------------+-----------------------+-----------------------------
+ conversations | id                    | integer
+ conversations | user_id               | integer
+ conversations | title                 | character varying
+ conversations | created_at            | timestamp without time zone
+ messages      | id                    | integer
+ messages      | conversation_id       | integer
+ messages      | sender                | character varying
+ messages      | content               | text
+ messages      | timestamp             | timestamp without time zone
+ sales_data    | id                    | integer
+ sales_data    | tran_type             | character varying
+ sales_data    | promo                 | character varying
+ sales_data    | mm                    | integer
+ sales_data    | yy                    | integer
+ sales_data    | division_code         | integer
+ sales_data    | division_name         | character varying
+ sales_data    | manager_code          | character varying
+ sales_data    | manager_name          | character varying
+ sales_data    | su_code               | character varying
+ sales_data    | su_name               | character varying
+ sales_data    | salesman_code         | character varying
+ sales_data    | salesman_name_e       | character varying
+ sales_data    | customer_code         | character varying
+ sales_data    | customer_name_e       | character varying
+ sales_data    | customer_code_child   | character varying
+ sales_data    | customer_name_e_child | character varying
+ sales_data    | brandname             | character varying
+ sales_data    | item_code             | character varying
+ sales_data    | item_name_e           | character varying
+ sales_data    | item_rec_code         | character varying
+ sales_data    | item_rec_name         | character varying
+ sales_data    | sales_value           | numeric
+ sales_data    | sales_qty             | numeric
+ sales_data    | sales_prof            | numeric
+ sales_data    | sr_reason_description | character varying
+ sales_data    | child_channel         | character varying
+ sales_data    | job_date              | date
+ sales_data    | job_no                | character varying
+ sales_data    | foc_value             | numeric
+ sales_data    | actual_discount_value | numeric
+ sales_data    | div_typ               | character varying
+ sales_data    | current_sm            | character varying
+ sales_data    | shelf_life            | numeric
+ sales_data    | div_type              | character varying
+ sales_data    | warehouse_name        | character varying
+ sales_data    | comp_code             | character varying
+ sales_data    | branch                | character varying
+ sales_data    | sub_branch            | character varying
+ users         | id                    | integer
+ users         | username              | character varying
+ users         | email                 | character varying
+ users         | hashed_password       | character varying

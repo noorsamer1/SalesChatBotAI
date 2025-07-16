@@ -1,8 +1,78 @@
+<<<<<<< HEAD
 import Plot from 'react-plotly.js';
 
 export default function ChartMessage({ data }) {
     const { chart_data, kind, title } = data;
 
+=======
+import React, { useState, useEffect } from 'react';
+
+export default function ChartMessage({ data }) {
+    const [Plot, setPlot] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        // Dynamically import Plotly to avoid blocking
+        const loadPlotly = async () => {
+            try {
+                const PlotlyComponent = await import('react-plotly.js');
+                setPlot(() => PlotlyComponent.default);
+                setLoading(false);
+            } catch (err) {
+                console.error('Failed to load Plotly:', err);
+                setError('Chart library failed to load');
+                setLoading(false);
+            }
+        };
+
+        loadPlotly();
+    }, []);
+
+    if (loading) {
+        return (
+            <div style={{ 
+                padding: '20px', 
+                textAlign: 'center',
+                background: '#1f2937',
+                borderRadius: '8px',
+                color: '#ffffff'
+            }}>
+                Loading chart...
+            </div>
+        );
+    }
+
+    if (error || !Plot) {
+        return (
+            <div style={{ 
+                padding: '20px', 
+                background: '#ef4444',
+                borderRadius: '8px',
+                color: '#ffffff'
+            }}>
+                ⚠️ {error || 'Chart component unavailable'}
+            </div>
+        );
+    }
+
+    const { chart_data, kind, title } = data;
+
+    // Validate chart data
+    if (!chart_data || !chart_data.labels || !chart_data.values) {
+        return (
+            <div style={{ 
+                padding: '20px', 
+                background: '#f59e0b',
+                borderRadius: '8px',
+                color: '#ffffff'
+            }}>
+                ⚠️ Invalid chart data
+            </div>
+        );
+    }
+
+>>>>>>> master
     const plotData = kind === "pie" ? [{
         type: "pie",
         labels: chart_data.labels,
@@ -24,7 +94,24 @@ export default function ChartMessage({ data }) {
         plot_bgcolor: "#1f2937",
         paper_bgcolor: "#111827",
         font: { color: "#ffffff" },
+<<<<<<< HEAD
     };
 
     return <Plot data={plotData} layout={layout} style={{ width: "100%", height: "100%" }} />;
 }
+=======
+        margin: { t: 50, r: 50, b: 50, l: 50 }
+    };
+
+    return (
+        <div style={{ width: "100%", minHeight: "400px" }}>
+            <Plot 
+                data={plotData} 
+                layout={layout} 
+                style={{ width: "100%", height: "400px" }}
+                config={{ responsive: true }}
+            />
+        </div>
+    );
+}
+>>>>>>> master
