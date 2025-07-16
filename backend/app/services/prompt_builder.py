@@ -2,35 +2,6 @@ from app.core.db import engine
 from sqlalchemy import text
 import pandas as pd
 from pathlib import Path
-<<<<<<< HEAD
-
-def build_final_prompt(user_input: str, base_prompt_path: str = "prompts/system_prompt.txt") -> str:
-    # Step 1: Load base prompt with placeholders
-    base_prompt = Path(base_prompt_path).read_text(encoding="utf-8")
-
-    # Step 2: Was Create SQLAlchemy engine, but I moved that :D
-
-    # Step 3: Get all table names
-    with engine.connect() as conn:
-        result = conn.execute(text("""
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-        """))
-        tables = [row[0] for row in result.fetchall()]
-        table_names_str = ", ".join(tables)
-
-        # Step 4: For each table, preview top 5 rows
-        preview_blocks = []
-        for table in tables:
-            df = pd.read_sql_query(f'SELECT * FROM "{table}" LIMIT 5', con=engine)
-            markdown_table = df.to_markdown(index=False)
-            preview_blocks.append(f"Table: {table}\n{markdown_table}\n")
-
-    preview_str = "\n".join(preview_blocks)
-
-    # Step 5: Replace placeholders in the base prompt
-=======
 from datetime import datetime, timedelta
 import re
 
@@ -219,16 +190,10 @@ Smart Query Suggestions:
 """
     
     # Replace placeholders
->>>>>>> master
     filled_prompt = (
         base_prompt
         .replace("$table_names", table_names_str)
         .replace("$sample_data", preview_str)
-<<<<<<< HEAD
-    )
-
-    return filled_prompt
-=======
         + smart_hints
         + history_context
         + f"\n\nCurrent Query: {user_input}"
@@ -259,4 +224,3 @@ def get_query_complexity_score(user_input: str) -> int:
     score += entity_count
     
     return min(score, 5)  # Cap at 5
->>>>>>> master
