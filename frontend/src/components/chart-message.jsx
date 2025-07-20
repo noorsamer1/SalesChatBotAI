@@ -43,22 +43,109 @@ export default function ChartMessage({ data }) {
             if (!canvas || !plotData || !plotData[0]) return;
             
             const ctx = canvas.getContext('2d');
-            const { x, y, type } = plotData[0];
             
             // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Set styles
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#667eea';
-            ctx.lineWidth = 2;
+            // Check if this is multi-series data
+            const isMultiSeries = plotData.length > 1 && plotData[0].mode === "lines+markers";
             
-            if (type === 'bar' && x && y) {
-                drawBarChart(ctx, x, y, canvas.width, canvas.height);
-            } else if (type === 'line' && x && y) {
-                drawLineChart(ctx, x, y, canvas.width, canvas.height);
+            if (isMultiSeries) {
+                // Multi-series line chart
+                drawMultiSeriesLineChart(ctx, plotData, canvas.width, canvas.height);
+            } else {
+                // Single series chart
+                const { x, y, type } = plotData[0];
+                
+                // Set styles
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#667eea';
+                ctx.lineWidth = 2;
+                
+                if (type === 'bar' && x && y) {
+                    drawBarChart(ctx, x, y, canvas.width, canvas.height);
+                } else if ((type === 'scatter' || type === 'line') && x && y) {
+                    drawLineChart(ctx, x, y, canvas.width, canvas.height, '#667eea');
+                }
             }
         }, [plotData, layout]);
+        
+        const drawMultiSeriesLineChart = (ctx, plotData, width, height) => {
+            const margin = 60; // More margin for legend
+            const chartWidth = width - 2 * margin;
+            const chartHeight = height - 2 * margin;
+            
+            // Get all values to find max
+            const allValues = plotData.flatMap(series => series.y);
+            const maxValue = Math.max(...allValues);
+            const minValue = Math.min(...allValues);
+            const valueRange = maxValue - minValue;
+            
+            const labels = plotData[0].x;
+            
+            // Draw each series
+            plotData.forEach((series, seriesIndex) => {
+                const color = series.line?.color || '#667eea';
+                
+                // Draw line
+                ctx.beginPath();
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 3;
+                
+                series.y.forEach((value, i) => {
+                    const x = margin + (i / (series.y.length - 1)) * chartWidth;
+                    const y = height - margin - ((value - minValue) / valueRange) * chartHeight;
+                    
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                });
+                
+                ctx.stroke();
+                
+                // Draw points
+                ctx.fillStyle = color;
+                series.y.forEach((value, i) => {
+                    const x = margin + (i / (series.y.length - 1)) * chartWidth;
+                    const y = height - margin - ((value - minValue) / valueRange) * chartHeight;
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+                
+                // Draw legend
+                const legendY = 20 + seriesIndex * 25;
+                ctx.fillStyle = color;
+                ctx.fillRect(20, legendY, 15, 15);
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '14px Inter';
+                ctx.fillText(series.name, 45, legendY + 12);
+            });
+            
+            // Draw x-axis labels
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '12px Inter';
+            ctx.textAlign = 'center';
+            labels.forEach((label, i) => {
+                const x = margin + (i / (labels.length - 1)) * chartWidth;
+                ctx.save();
+                ctx.translate(x, height - 10);
+                ctx.rotate(-Math.PI / 4); // 45 degree rotation
+                ctx.fillText(label, 0, 0);
+                ctx.restore();
+            });
+            
+            // Draw y-axis labels
+            ctx.textAlign = 'right';
+            for (let i = 0; i <= 5; i++) {
+                const value = minValue + (valueRange * i / 5);
+                const y = height - margin - (i / 5) * chartHeight;
+                ctx.fillText(value.toFixed(0), margin - 10, y + 4);
+            }
+        };
         
         const drawBarChart = (ctx, labels, values, width, height) => {
             const margin = 40;
@@ -87,13 +174,16 @@ export default function ChartMessage({ data }) {
             });
         };
         
-        const drawLineChart = (ctx, labels, values, width, height) => {
+        const drawLineChart = (ctx, labels, values, width, height, color = '#667eea') => {
             const margin = 40;
             const chartWidth = width - 2 * margin;
             const chartHeight = height - 2 * margin;
             const maxValue = Math.max(...values);
             
             ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            
             values.forEach((value, i) => {
                 const x = margin + (i / (values.length - 1)) * chartWidth;
                 const y = height - margin - (value / maxValue) * chartHeight;
@@ -105,14 +195,13 @@ export default function ChartMessage({ data }) {
                 }
                 
                 // Draw point
-                ctx.fillStyle = '#667eea';
+                ctx.fillStyle = color;
                 ctx.beginPath();
                 ctx.arc(x, y, 4, 0, 2 * Math.PI);
                 ctx.fill();
                 ctx.beginPath();
             });
             
-            ctx.strokeStyle = '#667eea';
             ctx.stroke();
         };
         
@@ -171,7 +260,7 @@ export default function ChartMessage({ data }) {
     // Validate and prepare chart data
     const { chart_data, kind, title } = data;
 
-    if (!chart_data || !chart_data.labels || !chart_data.values) {
+    if (!chart_data || !chart_data.labels) {
         return (
             <div style={{ 
                 padding: '20px', 
@@ -186,84 +275,338 @@ export default function ChartMessage({ data }) {
         );
     }
 
+    // 🚀 NEW: Handle multi-series data for year-over-year comparisons
+    const isMultiSeries = chart_data.multi_series && chart_data.series;
+    
     // Prepare data for Plotly or fallback
-    const plotData = kind === "pie" ? [{
-        type: "pie",
-        labels: chart_data.labels,
-        values: chart_data.values,
-        hole: 0.3, // Donut chart
-        marker: {
-            colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe']
-        }
-    }] : [{
-        type: kind === "line" ? "scatter" : "bar",
-        x: chart_data.labels,
-        y: chart_data.values,
-        mode: kind === "line" ? "lines+markers" : undefined,
-        marker: {
-            color: '#667eea'
-        },
-        line: kind === "line" ? {
-            color: '#667eea',
-            width: 3
-        } : undefined
-    }];
+    let plotData;
+    
+    if (isMultiSeries) {
+        // Multi-series line chart (e.g., 2023 vs 2024)
+        plotData = chart_data.series.map(series => ({
+            type: "scatter",
+            mode: "lines+markers",
+            name: series.name,
+            x: chart_data.labels,
+            y: series.values,
+            line: {
+                color: series.color,
+                width: 3
+            },
+            marker: {
+                color: series.color,
+                size: 6
+            }
+        }));
+    } else if (kind === "pie") {
+        // Traditional pie chart
+        plotData = [{
+            type: "pie",
+            labels: chart_data.labels,
+            values: chart_data.values,
+            hole: 0, // No hole for pie
+            marker: {
+                colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe']
+            }
+        }];
+    } else if (kind === "donut") {
+        // Modern donut chart (professional)
+        plotData = [{
+            type: "pie",
+            labels: chart_data.labels,
+            values: chart_data.values,
+            hole: 0.4, // Professional donut hole
+            marker: {
+                colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#42a5f5', '#26c6da', '#66bb6a']
+            },
+            textinfo: 'label+percent',
+            textposition: 'outside'
+        }];
+    } else if (kind === "horizontal_bar") {
+        // Horizontal bar chart for long labels
+        plotData = [{
+            type: "bar",
+            orientation: 'h',
+            x: chart_data.values,
+            y: chart_data.labels,
+            marker: {
+                color: '#667eea'
+            }
+        }];
+    } else if (kind === "stacked_bar" && Array.isArray(chart_data.y)) {
+        // Stacked bar chart for breakdowns
+        const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe'];
+        plotData = chart_data.y.map((series, index) => ({
+            type: "bar",
+            name: series.replace(/_/g, ' ').toUpperCase(),
+            x: chart_data.labels,
+            y: chart_data.values[series] || [],
+            marker: {
+                color: colors[index % colors.length]
+            }
+        }));
+    } else if (kind === "waterfall") {
+        // Waterfall chart for change analysis
+        plotData = [{
+            type: "waterfall",
+            orientation: "v",
+            x: chart_data.labels,
+            y: chart_data.values,
+            connector: { line: { color: "rgb(63, 63, 63)" } },
+            increasing: { marker: { color: "#10b981" } },
+            decreasing: { marker: { color: "#ef4444" } },
+            totals: { marker: { color: "#667eea" } }
+        }];
+    } else if (kind === "gauge") {
+        // Gauge chart for KPIs
+        plotData = [{
+            type: "indicator",
+            mode: "gauge+number+delta",
+            value: chart_data.values[0] || 0,
+            domain: { x: [0, 1], y: [0, 1] },
+            title: { text: chart_data.labels[0] || "KPI" },
+            gauge: {
+                axis: { range: [null, 100] },
+                bar: { color: "#667eea" },
+                steps: [
+                    { range: [0, 50], color: "#ef4444" },
+                    { range: [50, 80], color: "#f59e0b" },
+                    { range: [80, 100], color: "#10b981" }
+                ],
+                threshold: {
+                    line: { color: "#dc2626", width: 4 },
+                    thickness: 0.75,
+                    value: 90
+                }
+            }
+        }];
+    } else if (kind === "heatmap") {
+        // Heatmap for performance matrices
+        plotData = [{
+            type: "heatmap",
+            z: chart_data.matrix || [[1, 2, 3], [4, 5, 6], [7, 8, 9]], // 2D array
+            x: chart_data.x_labels || chart_data.labels,
+            y: chart_data.y_labels || ['Category A', 'Category B', 'Category C'],
+            colorscale: [
+                [0, '#1f2937'], [0.5, '#667eea'], [1, '#10b981']
+            ],
+            showscale: true
+        }];
+    } else if (kind === "multi_line" && Array.isArray(chart_data.y)) {
+        // Multi-line chart for multiple metrics
+        const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+        plotData = chart_data.y.map((metric, index) => ({
+            type: "scatter",
+            mode: "lines+markers",
+            name: metric.replace(/_/g, ' ').toUpperCase(),
+            x: chart_data.labels,
+            y: chart_data.values[metric] || [],
+            line: {
+                color: colors[index % colors.length],
+                width: 3
+            },
+            marker: {
+                color: colors[index % colors.length],
+                size: 6
+            }
+        }));
+    } else {
+        // Single-series bar/line chart (fallback)
+        plotData = [{
+            type: kind === "line" ? "scatter" : "bar",
+            x: chart_data.labels,
+            y: chart_data.values,
+            mode: kind === "line" ? "lines+markers" : undefined,
+            marker: {
+                color: '#667eea'
+            },
+            line: kind === "line" ? {
+                color: '#667eea',
+                width: 3
+            } : undefined
+        }];
+    }
 
-    const layout = {
+    // Dynamic layout based on chart type
+    let layout = {
         title: {
             text: title || "Chart",
             font: { color: "#ffffff", size: 18, family: "Inter, sans-serif" },
             pad: { t: 20 }
         },
-        ...(kind !== "pie" && {
-            xaxis: { 
-                title: {
-                    text: chart_data.x_axis || "Period",
-                    font: { color: "#e5e7eb", size: 14 }
-                },
-                tickfont: { color: "#d1d5db", size: 11 },
-                tickangle: kind === "line" ? -45 : 0, // Rotate labels for time series
-                gridcolor: "#374151",
-                linecolor: "#4b5563",
-                showgrid: true,
-                zeroline: false,
-                tickmode: kind === "line" ? "linear" : "array"
-            },
-            yaxis: { 
-                title: {
-                    text: chart_data.y_axis || "Sales (KWD)",
-                    font: { color: "#e5e7eb", size: 14 }
-                },
-                tickfont: { color: "#d1d5db", size: 11 },
-                tickformat: ",.0f", // Format numbers with commas
-                gridcolor: "#374151",
-                linecolor: "#4b5563",
-                showgrid: true,
-                zeroline: false
-            },
-        }),
         autosize: true,
         plot_bgcolor: "#1f2937",
         paper_bgcolor: "#111827",
         font: { color: "#ffffff", family: "Inter, sans-serif" },
-        margin: { t: 80, r: 60, b: 80, l: 80 }, // Better margins for readability
-        showlegend: kind === "pie",
-        hovermode: "x unified", // Better hover experience
-        // Professional gridlines and styling
-        annotations: kind === "line" ? [{
-            text: "Peak Performance",
-            x: chart_data.labels[chart_data.values.indexOf(Math.max(...chart_data.values))],
-            y: Math.max(...chart_data.values),
-            arrowhead: 2,
-            arrowsize: 1,
-            arrowwidth: 2,
-            arrowcolor: "#10b981",
-            font: { color: "#10b981", size: 12 },
-            bgcolor: "rgba(16, 185, 129, 0.1)",
-            bordercolor: "#10b981",
-            borderwidth: 1
-        }] : []
+        margin: { t: 80, r: 60, b: 80, l: 80 }
     };
+
+    // Chart-specific layout configurations
+    if (kind === "gauge") {
+        // Gauge charts need minimal layout
+        layout.showlegend = false;
+        layout.margin = { t: 40, r: 40, b: 40, l: 40 };
+    } else if (kind === "pie" || kind === "donut") {
+        // Pie/donut charts don't need axes
+        layout.showlegend = true;
+        layout.legend = {
+            orientation: "v",
+            x: 1,
+            y: 0.5,
+            bgcolor: "rgba(31, 41, 55, 0.8)",
+            bordercolor: "#4b5563",
+            borderwidth: 1,
+            font: { color: "#ffffff", size: 12 }
+        };
+    } else if (kind === "heatmap") {
+        // Heatmap specific layout
+        layout.xaxis = {
+            title: { text: "Categories", font: { color: "#e5e7eb", size: 14 } },
+            tickfont: { color: "#d1d5db", size: 11 },
+            side: "bottom"
+        };
+        layout.yaxis = {
+            title: { text: "Metrics", font: { color: "#e5e7eb", size: 14 } },
+            tickfont: { color: "#d1d5db", size: 11 }
+        };
+        layout.showlegend = false;
+    } else if (kind === "horizontal_bar") {
+        // Horizontal bar charts swap x/y axes
+        layout.xaxis = {
+            title: {
+                text: chart_data.y_axis || "Sales (KWD)",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickformat: ",.0f",
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true,
+            zeroline: false
+        };
+        layout.yaxis = {
+            title: {
+                text: chart_data.x_axis || "Categories",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: false,
+            zeroline: false
+        };
+        layout.margin.l = 150; // More left margin for long labels
+        layout.showlegend = false;
+    } else if (kind === "stacked_bar" || kind === "multi_line") {
+        // Multi-series charts need legends and proper axes
+        layout.xaxis = {
+            title: {
+                text: chart_data.x_axis || "Period",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickangle: kind === "multi_line" ? -45 : 0,
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true,
+            zeroline: false
+        };
+        layout.yaxis = {
+            title: {
+                text: chart_data.y_axis || "Value (KWD)",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickformat: ",.0f",
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true,
+            zeroline: false
+        };
+        layout.barmode = kind === "stacked_bar" ? "stack" : undefined;
+        layout.showlegend = true;
+        layout.legend = {
+            x: 0.02,
+            y: 0.98,
+            bgcolor: "rgba(31, 41, 55, 0.8)",
+            bordercolor: "#4b5563",
+            borderwidth: 1,
+            font: { color: "#ffffff", size: 12 }
+        };
+        layout.hovermode = "x unified";
+    } else if (kind === "waterfall") {
+        // Waterfall charts need special formatting
+        layout.xaxis = {
+            title: { text: "Changes", font: { color: "#e5e7eb", size: 14 } },
+            tickfont: { color: "#d1d5db", size: 11 },
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true
+        };
+        layout.yaxis = {
+            title: { text: "Impact (KWD)", font: { color: "#e5e7eb", size: 14 } },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickformat: ",.0f",
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true
+        };
+        layout.showlegend = false;
+    } else {
+        // Standard bar/line charts
+        layout.xaxis = {
+            title: {
+                text: chart_data.x_axis || "Period",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickangle: kind === "line" ? -45 : 0,
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true,
+            zeroline: false,
+            tickmode: kind === "line" ? "linear" : "array"
+        };
+        layout.yaxis = {
+            title: {
+                text: chart_data.y_axis || "Sales (KWD)",
+                font: { color: "#e5e7eb", size: 14 }
+            },
+            tickfont: { color: "#d1d5db", size: 11 },
+            tickformat: ",.0f",
+            gridcolor: "#374151",
+            linecolor: "#4b5563",
+            showgrid: true,
+            zeroline: false
+        };
+        layout.showlegend = isMultiSeries;
+        layout.legend = isMultiSeries ? {
+            x: 0.02,
+            y: 0.98,
+            bgcolor: "rgba(31, 41, 55, 0.8)",
+            bordercolor: "#4b5563",
+            borderwidth: 1,
+            font: { color: "#ffffff", size: 12 }
+        } : undefined;
+        layout.hovermode = "x unified";
+        
+        // Enhanced annotations for single-series line charts
+        if (kind === "line" && !isMultiSeries && chart_data.values) {
+            layout.annotations = [{
+                text: "Peak",
+                x: chart_data.labels[chart_data.values.indexOf(Math.max(...chart_data.values))],
+                y: Math.max(...chart_data.values),
+                arrowhead: 2,
+                arrowsize: 1,
+                arrowwidth: 2,
+                arrowcolor: "#10b981",
+                font: { color: "#10b981", size: 12 },
+                bgcolor: "rgba(16, 185, 129, 0.1)",
+                bordercolor: "#10b981",
+                borderwidth: 1
+            }];
+        }
+    }
 
     const config = { 
         responsive: true,

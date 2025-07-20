@@ -184,6 +184,22 @@ def extract_valid_json_parts(content: str) -> List[Dict]:
     if objects:
         return validate_and_fix_structure(objects)
     
+    # Check if the content looks like a refusal response
+    content_lower = content.lower()
+    if any(phrase in content_lower for phrase in [
+        "sorry, i can only answer", 
+        "i specialize in sales analytics",
+        "not about sales", 
+        "sales-related question",
+        "sales analytics",
+        "business analytics"
+    ]):
+        return [{
+            "type": "text",
+            "template": "Sorry, I can only answer questions about sales and sales analytics. Please ask a sales-related question.",
+            "value_code": ""
+        }]
+    
     # If nothing works, return a fallback
     return [{
         "type": "text",
@@ -200,6 +216,23 @@ def parse_openai_response(content: str) -> List[Dict]:
         return [{
             "type": "text",
             "template": "No response received. Please try again.",
+            "value_code": ""
+        }]
+    
+    # First check if this looks like a refusal response (before trying JSON parsing)
+    content_lower = content.lower()
+    if any(phrase in content_lower for phrase in [
+        "sorry, i can only answer", 
+        "i specialize in sales analytics",
+        "not about sales", 
+        "sales-related question",
+        "cannot process this request",
+        "only answer questions about sales",
+        "sales and sales analytics"
+    ]):
+        return [{
+            "type": "text",
+            "template": "Sorry, I can only answer questions about sales and sales analytics. Please ask a sales-related question.",
             "value_code": ""
         }]
     

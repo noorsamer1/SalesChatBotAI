@@ -253,9 +253,48 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
             if block.get("type") == "chart":
                 chart_data = block.get("chart_data", {})
                 labels = chart_data.get("labels", [])
-                values = chart_data.get("values", [])
-                # Chart has data if it has labels and values
-                return len(labels) > 0 and len(values) > 0 and any(v > 0 for v in values if isinstance(v, (int, float)))
+                
+                # 🚀 ENHANCED: Handle all chart formats (single, multi-series, professional charts)
+                if chart_data.get("multi_series"):
+                    has_labels = len(labels) > 0
+                    
+                    # Check for new multi-series format (stacked_bar, multi_line, etc.)
+                    values_data = chart_data.get("values", {})
+                    if isinstance(values_data, dict):
+                        # New format: {"values": {"series1": [1,2,3], "series2": [4,5,6]}}
+                        has_series_data = any(
+                            len(series_values) > 0 and any(v != 0 for v in series_values if isinstance(v, (int, float)))
+                            for series_values in values_data.values()
+                        )
+                        logger.debug(f"Multi-series chart validation (new format): labels={has_labels}, series_data={has_series_data}, series_count={len(values_data)}")
+                        return has_labels and has_series_data
+                    
+                    # Check for old multi-series format
+                    elif chart_data.get("series"):
+                        # Old format: {"series": [{"values": [...]}, ...]}
+                        series = chart_data.get("series", [])
+                        has_series_data = len(series) > 0 and any(
+                            len(s.get("values", [])) > 0 and any(v != 0 for v in s.get("values", []) if isinstance(v, (int, float)))
+                            for s in series
+                        )
+                        logger.debug(f"Multi-series chart validation (old format): labels={has_labels}, series_data={has_series_data}")
+                        return has_labels and has_series_data
+                    
+                    else:
+                        logger.debug("Multi-series chart missing data structure")
+                        return False
+                else:
+                    # Single-series chart validation (original logic + professional charts)
+                    values = chart_data.get("values", [])
+                    if isinstance(values, list):
+                        # Standard single-series format
+                        has_data = len(labels) > 0 and len(values) > 0 and any(v != 0 for v in values if isinstance(v, (int, float)))
+                        logger.debug(f"Single-series chart validation: labels={len(labels)}, values={len(values)}, has_data={has_data}")
+                        return has_data
+                    else:
+                        # Professional chart formats (gauge, heatmap) may have different structures
+                        logger.debug(f"Professional chart validation: labels={len(labels)}, has_values={bool(values)}")
+                        return len(labels) > 0 or bool(values)
             
             elif block.get("type") == "table":
                 rows = block.get("rows", [])
@@ -285,12 +324,22 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
             data_blocks = [block for block in clean_reply if block.get("type") in ["chart", "table"]]
             text_blocks = [block for block in clean_reply if block.get("type") == "text"]
             
+            logger.debug(f"Data validation: Found {len(data_blocks)} data blocks, {len(text_blocks)} text blocks")
+            
             # Check if we have data blocks and if ANY of them have valid data
             if data_blocks:
-                has_any_valid_data = any(has_valid_data(block) for block in data_blocks)
+                validation_results = []
+                for i, block in enumerate(data_blocks):
+                    is_valid = has_valid_data(block)
+                    validation_results.append(is_valid)
+                    logger.debug(f"Block {i} (type: {block.get('type')}): Valid = {is_valid}")
+                
+                has_any_valid_data = any(validation_results)
+                logger.debug(f"Final validation result: Has any valid data = {has_any_valid_data}")
                 
                 if not has_any_valid_data:
                     # Only then replace with no data message
+                    logger.warning("All data blocks deemed invalid - replacing with no data message")
                     clean_reply = [{
                         "type": "text",
                         "template": NO_DATA_MESSAGE,
@@ -298,6 +347,7 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                     }]
                 else:
                     # Keep all blocks with data, remove empty ones
+                    logger.debug("Keeping valid data blocks, filtering out empty ones")
                     clean_reply = [
                         block for block in clean_reply 
                         if block.get("type") == "text" or has_valid_data(block)
