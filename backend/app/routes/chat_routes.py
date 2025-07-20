@@ -6,17 +6,20 @@ from app.services.deps import get_current_user
 from app.models.models import Conversation, Message
 from app.services.openai_service import get_openai_response
 from app.services.response_parser import parse_reply
+from app.services.analytics_service import AnalyticsService
 import json
 from app.services.table_utils import auto_pivot_llm_table, add_year_totals
 from decimal import Decimal
 import logging
 import datetime
+import time
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+analytics_service = AnalyticsService()
 
 def hide_zero_null(table_block):
     """Hide zero and null values in table displays"""
@@ -206,6 +209,7 @@ def get_messages(conv_id: int, db: Session = Depends(get_db), user=Depends(get_c
 @router.post("/conversations/{conv_id}/messages", response_model=dict)
 def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     """Send a message and get AI response"""
+    start_time = time.time()
     try:
         # Validate conversation exists and belongs to user
         conv = db.query(Conversation).filter(
@@ -238,60 +242,68 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                         row[i] = ""
             return table_block
 
-        # --- Start Robust NO DATA Logic Here ---
-        # Define your no-data message (use same string as your fallback in your LLM output)
-        NO_DATA_MESSAGE = "No sales/profit data found for last month. Please check another time period"
-        # (Or whatever message you return for empty tables)
+        # --- FIXED NO DATA Logic - Don't replace charts with data ---
+        NO_DATA_MESSAGE = "No data found for your query. Please try a different time period or criteria."
 
-        # 1. Check for table/chart blocks with no data, and insert NO_DATA_MESSAGE if so
-        def is_no_data_table(block):
-            # Heuristic: Empty rows or all empty values
-            if block.get("type") in ["table", "chart"]:
+        def has_valid_data(block):
+            """Check if a block has valid data"""
+            block_type = block.get("type")
+            logger.debug(f"Validating block type: {block_type}")
+            
+            if block.get("type") == "chart":
+                chart_data = block.get("chart_data", {})
+                labels = chart_data.get("labels", [])
+                values = chart_data.get("values", [])
+                # Chart has data if it has labels and values
+                return len(labels) > 0 and len(values) > 0 and any(v > 0 for v in values if isinstance(v, (int, float)))
+            
+            elif block.get("type") == "table":
                 rows = block.get("rows", [])
-                if not rows or all(all((cell == "" or cell is None or cell == 0) for cell in row[1:]) for row in rows):
-                    return True
-            return False
+                logger.debug(f"Table validation: {len(rows)} rows found")
+                
+                # Table has data if it has any rows with content
+                if not rows:
+                    logger.debug("Table validation: No rows found")
+                    return False
+                
+                # Check if ANY row has meaningful content (don't be too strict about headers)
+                has_content = any(
+                    any(cell for cell in row if cell and str(cell).strip() != "" and str(cell).strip() != "0") 
+                    for row in rows
+                )
+                logger.debug(f"Table validation: Has meaningful content = {has_content}")
+                return has_content
+            
+            elif block.get("type") == "text":
+                # Text blocks are always valid
+                return True
+            
+            return True
 
-        # 2. Remove adjacent summary text for empty results
+        # Only replace with NO_DATA_MESSAGE if ALL data blocks are empty
         if isinstance(clean_reply, list):
-            new_reply = []
-            skip_next = False
-            for idx, block in enumerate(clean_reply):
-                # If this block is a table/chart and empty, and previous is a text summary, skip previous
-                if is_no_data_table(block):
-                    # Insert a NO_DATA_MESSAGE block and skip this table
-                    if idx > 0 and clean_reply[idx-1].get("type") == "text":
-                        new_reply = new_reply[:-1]  # Remove previous text block
-                    new_reply.append({
+            data_blocks = [block for block in clean_reply if block.get("type") in ["chart", "table"]]
+            text_blocks = [block for block in clean_reply if block.get("type") == "text"]
+            
+            # Check if we have data blocks and if ANY of them have valid data
+            if data_blocks:
+                has_any_valid_data = any(has_valid_data(block) for block in data_blocks)
+                
+                if not has_any_valid_data:
+                    # Only then replace with no data message
+                    clean_reply = [{
                         "type": "text",
                         "template": NO_DATA_MESSAGE,
                         "value_code": ""
-                    })
-                    skip_next = True  # Skip the empty table
-                elif skip_next:
-                    skip_next = False
+                    }]
                 else:
-                    new_reply.append(block)
-            # Only keep the first no-data block if multiples
-            seen = set()
-            final_reply = []
-            for block in new_reply:
-                if block["type"] == "text" and block["template"] == NO_DATA_MESSAGE:
-                    if NO_DATA_MESSAGE in seen:
-                        continue
-                    seen.add(NO_DATA_MESSAGE)
-                final_reply.append(block)
-            clean_reply = final_reply
+                    # Keep all blocks with data, remove empty ones
+                    clean_reply = [
+                        block for block in clean_reply 
+                        if block.get("type") == "text" or has_valid_data(block)
+                    ]
 
-        elif isinstance(clean_reply, dict) and is_no_data_table(clean_reply):
-            clean_reply = [{
-                "type": "text",
-                "template": NO_DATA_MESSAGE,
-                "value_code": ""
-            }]
-        # --- End Robust NO DATA Logic ---
-
-        # Hide zeros/nulls in all tables (if any left)
+        # Hide zeros/nulls in remaining tables
         if isinstance(clean_reply, list):
             for i, block in enumerate(clean_reply):
                 if isinstance(block, dict) and block.get("type") == "table":
@@ -320,6 +332,24 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         
         logger.info(f"Processed message in conversation {conv_id} - Generated {len(clean_reply) if isinstance(clean_reply, list) else 1} response blocks")
         
+        # Track analytics (non-blocking)
+        try:
+            response_time_ms = int((time.time() - start_time) * 1000)
+            analytics_service.track_query(
+                db=db,
+                query_text=msg.content,
+                user_id=str(user.id),
+                session_id=str(conv_id),
+                response_time_ms=response_time_ms,
+                success=True,
+                response_content=json.dumps(clean_reply)
+            )
+            logger.info(f"Analytics tracked successfully for query: {msg.content[:50]}...")
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed (non-critical): {analytics_error}")
+            # Analytics failure should not block chat functionality
+            pass
+        
         return {
             "user_message": {
                 "id": user_msg.id,
@@ -339,6 +369,24 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         raise
     except Exception as e:
         logger.error(f"Error sending message: {e}")
+        
+        # Track failed analytics (non-blocking)
+        try:
+            response_time_ms = int((time.time() - start_time) * 1000)
+            analytics_service.track_query(
+                db=db,
+                query_text=msg.content,
+                user_id=str(user.id),
+                session_id=str(conv_id),
+                response_time_ms=response_time_ms,
+                success=False,
+                error_message=str(e)
+            )
+        except Exception as analytics_error:
+            logger.warning(f"Analytics tracking failed (non-critical): {analytics_error}")
+            # Don't let analytics failure mask the real error
+            pass
+        
         db.rollback()
         raise HTTPException(status_code=500, detail="Failed to process message")
     
