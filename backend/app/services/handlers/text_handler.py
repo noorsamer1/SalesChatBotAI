@@ -1,11 +1,13 @@
 from .handlersCommnFunction import *
-import regex as re
+import re
 
 def handle_text(response):
     """Enhanced text handler with better formatting and insights"""
+    
     try:
         template = response.get("template") or response.get("text") or ""
         value_code = response.get("value_code", "").strip()
+        
 
         if not template:
             result = {
@@ -53,12 +55,24 @@ def handle_text(response):
                 if len(columns) == 1 and "{value}" in template:
                     values["value"] = values.get(columns[0], "0")
             else:
-                # No data returned
-                result = {
-                    "type": "text",
-                    "template": "No sales/profit data found for the specified period. Please check another time period.",
-                    "value_code": ""
-                }
+                # No data returned from text query - but this doesn't mean no data exists overall
+                # Use a generic message or the original template without placeholders
+                if template and "{" in template:
+                    # Remove placeholder syntax and provide a generic message
+                    cleaned_template = template
+                    cleaned_template = re.sub(r'\{[^}]+\}', 'data', cleaned_template)
+                    result = {
+                        "type": "text", 
+                        "template": cleaned_template,
+                        "value_code": ""
+                    }
+                else:
+                    # Fallback to original template
+                    result = {
+                        "type": "text",
+                        "template": template or "Analysis completed.",
+                        "value_code": ""
+                    }
                 if "text" not in result and "template" in result:
                     result["text"] = result["template"]
                 if "template" not in result and "text" in result:
@@ -91,6 +105,7 @@ def handle_text(response):
                     result["template"] = result["text"]
                 return result
             final_text = template.format(**values)
+            logger.info(f"[DEBUG TEXT HANDLER] template: {template}, value_code: {value_code}, values: {values}")
         except KeyError as e:
             logger.error(f"Template formatting error: {e}")
             final_text = template

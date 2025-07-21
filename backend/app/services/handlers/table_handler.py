@@ -15,11 +15,25 @@ def handle_table(response):
         try:
             rows, columns = execute_query_safely(sql, timeout=45)  # Longer timeout for tables
             
-            # Validate data size
-            if len(rows) > 1000:
+            # Smart data size validation - respect SQL LIMIT clauses
+            import re
+            sql_upper = sql.upper()
+            
+            # Check if query already has a reasonable LIMIT
+            limit_match = re.search(r'LIMIT\s+(\d+)', sql_upper)
+            has_reasonable_limit = False
+            
+            if limit_match:
+                limit_value = int(limit_match.group(1))
+                has_reasonable_limit = limit_value <= 50  # Consider LIMIT 50 or less as reasonable
+            
+            # Only truncate if no reasonable limit and result is too large
+            if not has_reasonable_limit and len(rows) > 1000:
                 rows = rows[:1000]
-                logger.warning(f"Table truncated to 1000 rows")
-                title += " (showing first 1000 rows)"
+                logger.warning(f"Table truncated to 1000 rows (no LIMIT clause found)")
+                title += " (showing first 1000 rows - consider using LIMIT in query)"
+            elif len(rows) > 0:
+                logger.info(f"Table generated with {len(rows)} rows")
             
             # Convert rows to proper format
             formatted_rows = []

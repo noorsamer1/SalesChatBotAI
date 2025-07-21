@@ -63,7 +63,7 @@ export default function Login({ onLogin }) {
           <h2>
             <span className="welcome-text">Welcome to</span>
             <br />
-            <span className="brand-text">FutureTEC</span>
+            <span className="brand-text">Joud</span>
             <br />
             <span className="ai-text">Sales AI</span>
           </h2>
@@ -126,7 +126,7 @@ export default function Login({ onLogin }) {
         </button>
 
         <div className="footer-text">
-          Powered by <span className="footer-brand">FutureTEC AI</span>
+          Powered by <span className="footer-brand">Joud AI</span>
         </div>
       </form>
     </div>

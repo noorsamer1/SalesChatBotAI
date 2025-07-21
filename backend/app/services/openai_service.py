@@ -1,11 +1,11 @@
 import json
 import asyncio
 import time
+import re
 from openai import OpenAI
 from app.core.config import settings
 from app.services.prompt_builder import build_final_prompt, get_query_complexity_score
 from functools import wraps
-import re
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -25,6 +25,69 @@ def retry_on_failure(max_retries=3, delay=1):
             return None
         return wrapper
     return decorator
+
+def validate_and_fix_sql(sql_query: str) -> str:
+    """Validate and fix common SQL GROUP BY/ORDER BY issues without duplicates"""
+    if not sql_query.strip():
+        return sql_query
+    
+    print(f"[SQL VALIDATOR] Input: {sql_query}")
+    
+    # Check if GROUP BY columns are already correct
+    if ('GROUP BY TO_CHAR(job_date' in sql_query and 
+        'EXTRACT(YEAR FROM job_date)' in sql_query and 
+        'EXTRACT(MONTH FROM job_date)' in sql_query):
+        print("[SQL VALIDATOR] GROUP BY already contains required columns")
+        return sql_query
+    
+    # Fix common GROUP BY issues with monthly trends
+    if 'GROUP BY TO_CHAR(job_date' in sql_query and 'ORDER BY EXTRACT(' in sql_query:
+        print("[SQL VALIDATOR] Fixing GROUP BY/ORDER BY compatibility")
+        
+        # Fix 1: Add missing GROUP BY columns for time-based grouping (only if not present)
+        if ("GROUP BY TO_CHAR(job_date, 'Mon-YYYY')" in sql_query and 
+            "EXTRACT(YEAR FROM job_date)" not in sql_query):
+            sql_query = sql_query.replace(
+                "GROUP BY TO_CHAR(job_date, 'Mon-YYYY')",
+                "GROUP BY TO_CHAR(job_date, 'Mon-YYYY'), EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)"
+            )
+        
+        # Fix 2: Ensure ORDER BY uses the same expressions as GROUP BY
+        if 'ORDER BY EXTRACT(MONTH FROM job_date)' in sql_query:
+            sql_query = sql_query.replace(
+                'ORDER BY EXTRACT(MONTH FROM job_date)',
+                'ORDER BY EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)'
+            )
+    
+    # Remove any duplicate GROUP BY columns
+    import re
+    
+    # Extract GROUP BY clause
+    group_by_match = re.search(r'GROUP BY\s+(.+?)(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)', sql_query, re.IGNORECASE)
+    if group_by_match:
+        group_by_clause = group_by_match.group(1)
+        
+        # Split columns and remove duplicates while preserving order
+        columns = [col.strip() for col in group_by_clause.split(',')]
+        unique_columns = []
+        seen = set()
+        
+        for col in columns:
+            if col.lower() not in seen:
+                unique_columns.append(col)
+                seen.add(col.lower())
+        
+        # Reconstruct the query with deduplicated GROUP BY
+        new_group_by = 'GROUP BY ' + ', '.join(unique_columns)
+        sql_query = re.sub(
+            r'GROUP BY\s+.+?(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)',
+            new_group_by,
+            sql_query,
+            flags=re.IGNORECASE
+        )
+    
+    print(f"[SQL VALIDATOR] Output: {sql_query}")
+    return sql_query
 
 def clean_json_response(content: str) -> str:
     """Clean and fix common JSON formatting issues"""
@@ -50,11 +113,6 @@ def clean_json_response(content: str) -> str:
     # Fix trailing commas BEFORE fixing quotes
     content = re.sub(r',\s*}', '}', content)  # Remove trailing commas in objects
     content = re.sub(r',\s*]', ']', content)  # Remove trailing commas in arrays
-    
-    # DON'T automatically convert single quotes to double quotes
-    # This was causing SQL syntax errors
-    # Only fix quotes that are clearly JSON property names or string values
-    # We'll let Python's json.loads handle the parsing
     
     return content.strip()
 
@@ -99,9 +157,14 @@ def validate_response_structure(response_data) -> tuple[bool, str]:
     return True, "Valid"
 
 def enhance_sql_query(sql_query: str) -> str:
-    """Enhance SQL queries with better formatting and safety"""
+    """Enhanced SQL queries with better formatting and safety"""
     if not sql_query.strip():
         return sql_query
+    
+    print(f"[SQL ENHANCER] Input: {sql_query}")
+    
+    # First validate and fix SQL syntax issues
+    sql_query = validate_and_fix_sql(sql_query)
     
     # Add safety checks
     dangerous_keywords = ['DELETE', 'DROP', 'TRUNCATE', 'ALTER', 'CREATE', 'INSERT', 'UPDATE']
@@ -119,6 +182,7 @@ def enhance_sql_query(sql_query: str) -> str:
         else:
             sql_query = sql_query.replace('LIMIT', 'ORDER BY job_date DESC LIMIT')
     
+    print(f"[SQL ENHANCER] Output: {sql_query}")
     return sql_query
 
 @retry_on_failure(max_retries=3, delay=1)
@@ -131,12 +195,46 @@ def get_openai_response(user_input: str, conversation_history: list = None) -> d
         # Build enhanced prompt with context
         system_prompt = build_final_prompt(user_input, conversation_history)
         
+        # Add enhanced SQL guidelines to system prompt
+        enhanced_sql_rules = """
+
+CRITICAL SQL RULES FOR CHARTS AND TRENDS:
+
+1. **Monthly Trend Queries - ALWAYS use this pattern:**
+```sql
+SELECT TO_CHAR(job_date, 'Mon-YYYY') as month,
+       ROUND(SUM(sales_value), 3) as total_sales_kwd
+FROM sales_data 
+WHERE tran_type = 'Sales' AND EXTRACT(YEAR FROM job_date) = 2024
+GROUP BY TO_CHAR(job_date, 'Mon-YYYY'), EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)
+ORDER BY EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)
+```
+
+2. **When using GROUP BY with date functions:**
+   - ALWAYS include both YEAR and MONTH in GROUP BY for monthly trends
+   - ORDER BY must use the same expressions as GROUP BY
+   - Never use raw job_date in ORDER BY when grouping by TO_CHAR
+
+3. **Chart Query Patterns:**
+   - X-axis: Use entity name or formatted date
+   - Y-axis: Use aggregated values (SUM, AVG, COUNT)
+   - Always GROUP BY the x-axis column
+   - ORDER BY should match GROUP BY columns
+
+WRONG: ❌
+ORDER BY EXTRACT(MONTH FROM job_date) when GROUP BY TO_CHAR(job_date, 'Mon-YYYY')
+
+RIGHT: ✅  
+GROUP BY TO_CHAR(job_date, 'Mon-YYYY'), EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)
+ORDER BY EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)
+"""
+        
         # Adjust parameters based on complexity
         max_tokens = min(4000, 1000 + (complexity * 500))
         temperature = max(0.1, 0.3 - (complexity * 0.05))
         
         # Enhanced system message
-        enhanced_system = system_prompt + f"""
+        enhanced_system = system_prompt + enhanced_sql_rules + f"""
 
 IMPORTANT RESPONSE GUIDELINES:
 1. Always return a valid JSON array, even for single responses: [{{"type": "text", "template": "...", "value_code": "..."}}]
@@ -192,9 +290,11 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
             # Enhance SQL queries in the response
             for item in parsed_response:
                 if item.get("type") in ["table", "chart"] and "code" in item:
-                    print("[LLM GENERATED SQL]", item["code"])
+                    original_sql = item["code"]
+                    print(f"[LLM GENERATED SQL] {original_sql}")
                     try:
-                        item["code"] = enhance_sql_query(item["code"])
+                        item["code"] = enhance_sql_query(original_sql)
+                        print(f"[ENHANCED SQL] {item['code']}")
                     except ValueError as e:
                         print(f"[openai_service] SQL validation error: {e}")
                         return [{
@@ -208,7 +308,6 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
         except json.JSONDecodeError as e:
             print(f"[openai_service] JSON decode error: {e}")
             print(f"[openai_service] Raw content: {content}")
-            # print(f"[openai_service] Cleaned content: {cleaned_content}")
             
             # Try to extract meaningful text if JSON parsing fails
             return [{
