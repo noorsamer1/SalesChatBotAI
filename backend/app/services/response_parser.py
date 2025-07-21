@@ -21,13 +21,18 @@ def parse_reply(response):
     Returns:
         list: A list of processed backend-ready output blocks (text, table, chart, etc.).
     """
-    # Parse the JSON string from the LLM
     multi_parse = response
-
-    # Initialize a list to collect results
     results = []
 
-    # If the response is a list (multi-response)
+    # === Fallback: If response is None, empty, or not a dict/list, return error block ===
+    if not multi_parse or not isinstance(multi_parse, (dict, list)):
+        return [{
+            "type": "text",
+            "text": "Sorry, I could not answer your question. Please check your request or try rephrasing.",
+            "value_code": ""
+        }]
+
+    # Multi-block (list) response
     if isinstance(multi_parse, list):
         for block in multi_parse:
             response_type = block.get("type")
@@ -35,14 +40,34 @@ def parse_reply(response):
             if handler:
                 results.append(handler(block))
             else:
-                raise ValueError(f"Unsupported response type: {response_type}")
+                # Fallback for unsupported type
+                results.append({
+                    "type": "text",
+                    "template": "Sorry, your request could not be processed (unsupported response type).",
+                    "text": "Sorry, your request could not be processed (unsupported response type).",
+                    "value_code": ""
+                })
     else:
-        # Single response block (dict)
+        # Single-block (dict) response
         response_type = multi_parse.get("type")
         handler = handlers.get(response_type)
         if handler:
             results.append(handler(multi_parse))
         else:
-            raise ValueError(f"Unsupported response type: {response_type}")
+            # Fallback for unsupported type
+            results.append({
+                "type": "text",
+                "template": "Sorry, your request could not be processed (unsupported response type).",
+                "text": "Sorry, your request could not be processed (unsupported response type).",
+                "value_code": ""
+            })
 
+    # Extra fallback if results is still empty
+    if not results:
+        results.append({
+            "type": "text",
+            "text": "Sorry, I could not answer your question. Please check your request or try rephrasing.",
+            "value_code": ""
+        })
     return results
+
