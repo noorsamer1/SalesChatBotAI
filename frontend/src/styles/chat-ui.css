@@ -796,8 +796,6 @@ tbody tr:hover {
   }
 }/* Enhanced Modern Chat UI Styles */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 :root {
     --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #4facfe 100%);
     --secondary-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
