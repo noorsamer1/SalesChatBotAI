@@ -3,6 +3,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
+    --primary-bg:#222f68;
     --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #4facfe 100%);
     --secondary-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
     --surface-dark: rgba(30, 41, 59, 0.95);
@@ -16,6 +17,8 @@
     --glass-effect: rgba(255, 255, 255, 0.1);
     --shadow-primary: 0 20px 40px rgba(0, 0, 0, 0.3);
     --shadow-secondary: 0 8px 24px rgba(102, 126, 234, 0.3);
+    --new-chat-bg: linear-gradient(135deg, #222f68 0%, #586bbc 45%, #586bbc 55%, #222f68 100%);
+    --chat-bg: linear-gradient(135deg, #222f68 0%, #533483 45%, #586bbc 55%, #222f68 100%);
 }
 
 body, html {
@@ -143,7 +146,7 @@ body::before {
 
 /* Enhanced Buttons */
 .clear-memory {
-  background: var(--primary-gradient);
+  background: var(--new-chat-bg);
   background-size: 200% 200%;
   color: var(--text-light);
   border: none;
@@ -272,7 +275,7 @@ body::before {
 
 .chat-list-item.selected,
 .chat-list-item:hover {
-  background: var(--primary-gradient);
+  background: var(--chat-bg);
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
 }
@@ -337,7 +340,7 @@ body::before {
 }
 
 .header {
-  background: var(--primary-gradient);
+  background: var(--primary-bg);
   background-size: 200% 200%;
   color: var(--text-light);
   padding: 24px 40px;
