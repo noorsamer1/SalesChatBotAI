@@ -18,7 +18,7 @@
     --shadow-primary: 0 20px 40px rgba(0, 0, 0, 0.3);
     --shadow-secondary: 0 8px 24px rgba(102, 126, 234, 0.3);
     --new-chat-bg: linear-gradient(135deg, #222f68 0%, #586bbc 45%, #586bbc 55%, #222f68 100%);
-    --chat-bg: linear-gradient(135deg, #222f68 0%, #533483 45%, #586bbc 55%, #222f68 100%);
+    --chat-bg: linear-gradient(90deg, #349BE5 0%, #3B86E7 50%, #222f68 100%);
 }
 
 body, html {
@@ -276,6 +276,8 @@ body::before {
 .chat-list-item.selected,
 .chat-list-item:hover {
   background: var(--chat-bg);
+  background-size: 200% 200%;
+  animation: gradientShift 4s ease infinite;
   transform: translateY(-2px);
   box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
 }
