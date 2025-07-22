@@ -232,81 +232,53 @@
 /* Futuristic button */
 .login-btn {
   width: 100%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #f5576c 75%, #4facfe 100%);
-  background-size: 300% 300%;
-  color: #ffffff;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #a855f7);
   border: none;
-  padding: 18px 0;
   border-radius: 12px;
-  font-weight: 600;
+  color: white;
   font-size: 1.1rem;
-  letter-spacing: 0.5px;
-  margin-top: 20px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.3s ease;
-  box-shadow: 
-    0 8px 24px rgba(102, 126, 234, 0.3),
-    0 2px 8px rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
-  animation: gradientShift 4s ease infinite;
-}
-
-@keyframes gradientShift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.login-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s;
-}
-
-.login-btn:hover::before {
-  left: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  box-shadow: 
+    0 4px 15px rgba(139, 92, 246, 0.4),
+    0 0 20px rgba(139, 92, 246, 0.2);
 }
 
 .login-btn:hover {
   transform: translateY(-2px);
   box-shadow: 
-    0 12px 32px rgba(102, 126, 234, 0.4),
-    0 4px 16px rgba(0, 0, 0, 0.3);
+    0 8px 25px rgba(139, 92, 246, 0.5),
+    0 0 30px rgba(139, 92, 246, 0.3);
 }
 
 .login-btn:active {
   transform: translateY(0);
 }
 
-.login-btn:disabled {
-  opacity: 0.6;
+.login-btn.loading {
   cursor: not-allowed;
-  transform: none;
+  opacity: 0.8;
 }
 
-/* Button content */
-.btn-content, .loading-content {
+.login-spinner {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
-.btn-icon {
-  font-size: 1.1rem;
-}
-
-.loading-spinner {
+.spinner {
   width: 16px;
   height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top: 2px solid #ffffff;
+  border-top: 2px solid white;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -314,6 +286,11 @@
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+.btn-icon {
+  font-size: 1.2rem;
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.3));
 }
 
 /* Error message */
@@ -401,4 +378,91 @@
 /* Form mounted animation */
 .login-form.mounted {
   animation: formSlideIn 0.8s ease-out;
+}
+
+/* Success message styling */
+.login-success {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 10px;
+  color: #10b981;
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  backdrop-filter: blur(10px);
+  animation: slideInSuccess 0.3s ease-out;
+}
+
+.success-icon {
+  font-size: 1.1rem;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.4));
+}
+
+@keyframes slideInSuccess {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Mode toggle styling */
+.mode-toggle {
+  margin-top: 1.5rem;
+  text-align: center;
+}
+
+.toggle-btn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.toggle-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.toggle-btn:hover::before {
+  left: 100%;
+}
+
+.toggle-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(10px);
+}
+
+/* Enhanced form styling for registration */
+.input-container {
+  margin: 2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+/* Email input specific styling (same as others but with distinct animation) */
+.input-wrapper:has(input[type="email"]) .input-focus-line {
+  background: linear-gradient(90deg, #10b981, #059669);
 }

@@ -17,6 +17,7 @@ export default function ChatUI({ user, onLogout }) {
   const messagesEndRef = useRef(null);
   const [messageCache, setMessageCache] = useState(new Map()); // Cache for messages
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [isWelcomeMode, setIsWelcomeMode] = useState(true); // 🆕 NEW: Welcome state like ChatGPT
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -50,25 +51,35 @@ export default function ChatUI({ user, onLogout }) {
             onLogout();
             return;
           }
-          throw new Error("Failed to fetch chats");
+          throw new Error("Failed to fetch conversations");
         }
         
         const data = await res.json();
-        console.log("Fetched chats:", data); // Debug log
-        setChats(data);
-        if (data.length > 0) {
-          setActiveChatId(data[0].id);
-        } else {
+        console.log("Fetched conversations:", data.length); // Debug log
+        
+        if (data.length === 0) {
           console.log("No conversations found for user");
+          setIsWelcomeMode(true); // 🆕 Stay in welcome mode if no chats
+          setActiveChatId(null);
+          setMessages([]);
+        } else {
+          setChats(data);
+          // 🆕 Don't auto-select first chat - let user choose or stay in welcome mode
+          setIsWelcomeMode(true); 
+          setActiveChatId(null);
+          setMessages([]);
         }
+        
       } catch (err) {
-        console.error("Error fetching chats:", err);
+        console.error("Error fetching conversations:", err);
+        setIsWelcomeMode(true); // 🆕 Default to welcome mode on error
+        setActiveChatId(null);
+        setMessages([]);
       }
     }
     
-    // Add a small delay to ensure token is available
-    setTimeout(fetchChats, 100);
-  }, [user, onLogout]);
+    fetchChats();
+  }, [onLogout]);
 
   // Load messages for active chat with proper caching and ordering
   useEffect(() => {
@@ -204,7 +215,7 @@ export default function ChatUI({ user, onLogout }) {
 //     }
 //   }
 
-  // Create new chat by calling backend to get real conversation ID
+  // Always create a new chat in the backend when New Chat is clicked
   async function handleNewChat() {
     try {
       const res = await fetch("http://localhost:8845/chat/conversations", {
@@ -213,21 +224,16 @@ export default function ChatUI({ user, onLogout }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
         },
-        body: JSON.stringify({ title: "New Chat" }),
+        body: JSON.stringify({}),
       });
       if (!res.ok) throw new Error("Failed to create new chat");
       const data = await res.json();
-      const newChat = { id: data.id, title: data.title, created_at: new Date().toISOString() };
-      
+      const newChat = { id: data.id, title: data.title || "New Chat", created_at: new Date().toISOString() };
       setChats(prevChats => [newChat, ...prevChats]);
       setActiveChatId(newChat.id);
       setMessages([]);
-      
-      // Initialize empty cache for new chat
-      setMessageCache(prev => new Map(prev.set(newChat.id, [])));
-      
+      setIsWelcomeMode(false);
     } catch (err) {
-      console.error("Failed to create new chat", err);
       alert("Error: Could not create a new chat.");
     }
   }
@@ -276,17 +282,78 @@ export default function ChatUI({ user, onLogout }) {
     }
   }
 
-  // Select chat from sidebar with proper state management
-  function handleSelectChat(chatId) {
-    if (chatId === activeChatId) return; // No need to reload same chat
+  // Select and load a chat
+  async function handleSelectChat(chatId) {
+    if (chatId === activeChatId) return;
     
     setActiveChatId(chatId);
-    
-    // Load messages from cache or trigger useEffect to fetch
+    setIsWelcomeMode(false); // 🆕 Exit welcome mode when selecting a chat
+    setLoading(true);
+
+    // Use cached messages if available
     if (messageCache.has(chatId)) {
       setMessages(messageCache.get(chatId));
-    } else {
-      setMessages([]); // Will trigger fetch in useEffect
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `http://localhost:8845/chat/conversations/${chatId}/messages`,
+        {
+          headers: { Authorization: `Bearer ${localStorage.getItem("futuretec_token")}` }
+        }
+      );
+      if (!res.ok) throw new Error("Failed to load messages");
+      const data = await res.json();
+      
+      setMessages(data);
+      
+      // Cache the messages
+      setMessageCache(prev => new Map(prev.set(chatId, data)));
+      
+    } catch (err) {
+      console.error("Failed to load messages", err);
+      alert("Error: Could not load messages for this chat.");
+      setMessages([]);
+    }
+    setLoading(false);
+  }
+
+  // 🆕 NEW: Auto-create conversation on first message (like ChatGPT)
+  async function autoCreateConversation() {
+    try {
+      const res = await fetch("http://localhost:8845/chat/conversations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
+        },
+        body: JSON.stringify({}), // Let backend generate the title
+      });
+      
+      if (!res.ok) throw new Error("Failed to create new chat");
+      const data = await res.json();
+      
+      const newChat = { 
+        id: data.id, 
+        title: data.title || "New Chat", 
+        created_at: new Date().toISOString() 
+      };
+      
+      setChats(prevChats => [newChat, ...prevChats]);
+      setActiveChatId(newChat.id);
+      setIsWelcomeMode(false); // 🆕 Exit welcome mode
+      setMessages([]);
+      
+      // Initialize empty cache for new chat
+      setMessageCache(prev => new Map(prev.set(newChat.id, [])));
+      
+      return newChat.id;
+      
+    } catch (err) {
+      console.error("Failed to auto-create conversation", err);
+      throw err;
     }
   }
 
@@ -296,14 +363,39 @@ export default function ChatUI({ user, onLogout }) {
     setTimeout(() => setIsTyping(false), 3000);
   };
 
-  // Send user message to backend, handle bot reply
+  // Auto-create a chat if needed before sending a message
   async function handleSend() {
     const trimmed = inputValue.trim();
     if (!trimmed || loading) return;
+    let chatId = activeChatId;
+    if (!chatId) {
+      // No active chat, create one first
+      try {
+        const res = await fetch("http://localhost:8845/chat/conversations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
+          },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) throw new Error("Failed to create new chat");
+        const data = await res.json();
+        const newChat = { id: data.id, title: data.title || "New Chat", created_at: new Date().toISOString() };
+        setChats(prevChats => [newChat, ...prevChats]);
+        setActiveChatId(newChat.id);
+        setMessages([]);
+        setIsWelcomeMode(false);
+        chatId = newChat.id;
+      } catch (err) {
+        alert("Error: Could not create a new chat.");
+        return;
+      }
+    } else {
+      setIsWelcomeMode(false);
+    }
     setLoading(true);
     setInputValue("");
-
-    // Add user message locally with temporary ID for React keys
     const tempUserMsgId = `temp-user-${Date.now()}`;
     const userMessage = { 
       id: tempUserMsgId, 
@@ -311,101 +403,47 @@ export default function ChatUI({ user, onLogout }) {
       content: trimmed,
       timestamp: new Date().toISOString()
     };
-    
     setMessages((prev) => [...prev, userMessage]);
-
-    // Show typing indicator
     setIsTyping(true);
-
     try {
-      // Add 60-second timeout
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
-
       const res = await fetch(
-        `http://localhost:8845/chat/conversations/${activeChatId}/messages`,
+        `http://localhost:8845/chat/conversations/${chatId}/messages`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
           },
-          body: JSON.stringify({ content: trimmed }),
-          signal: controller.signal
+          body: JSON.stringify({ content: trimmed })
         }
       );
-      
-      clearTimeout(timeoutId);
-      
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`Server error: ${res.status} - ${errorText}`);
       }
-      
       const data = await res.json();
-      
-      // Remove temp user message and add real ones with backend IDs
       setMessages((prev) => {
         const withoutTemp = prev.filter(msg => msg.id !== tempUserMsgId);
-        
-        // Add real user message with backend ID
-        const realUserMessage = {
-          id: data.user_message.id,
-          sender: "user",
-          content: data.user_message.content,
-          timestamp: data.user_message.timestamp
-        };
-        
-        // Add real bot message with backend ID
-        const realBotMessage = {
-          id: data.bot_message.id,
-          sender: "bot",
-          content: data.bot_message.content,
-          timestamp: data.bot_message.timestamp
-        };
-        
-        // Sort messages by timestamp to maintain order
-        const newMessages = [...withoutTemp, realUserMessage, realBotMessage]
-          .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        
-        return newMessages;
+        return [
+          ...withoutTemp,
+          data.user_message,
+          data.bot_message
+        ];
       });
-
-      // Update chat title if this was the first message
-      const currentChat = chats.find(c => c.id === activeChatId);
-      if (currentChat && (currentChat.title === "New Chat" || !currentChat.title)) {
-        setChats(prev => prev.map(c => 
-          c.id === activeChatId 
-            ? { ...c, title: data.bot_message.content?.[0]?.template?.substring(0, 50) || "Chat" }
-            : c
-        ));
+      if (data.conversation_title) {
+        setChats(prevChats => 
+          prevChats.map(chat => 
+            chat.id === chatId 
+              ? { ...chat, title: data.conversation_title }
+              : chat
+          )
+        );
       }
-
-    } catch (err) {
-      console.error("Error sending message:", err);
-      
-      // Remove temp user message and show error
-      setMessages((prev) => {
-        const withoutTemp = prev.filter(msg => msg.id !== tempUserMsgId);
-        
-        let errorMsg = "⚠️ Error: Could not connect to backend.";
-        
-        if (err.name === 'AbortError') {
-          errorMsg = "⚠️ Request timed out. Please try a simpler question.";
-        } else if (err.message.includes('Server error')) {
-          errorMsg = `⚠️ ${err.message}`;
-        }
-        
-        return [...withoutTemp, {
-          id: `error-${Date.now()}`,
-          sender: "bot",
-          content: [{ type: "text", text: errorMsg }],
-          timestamp: new Date().toISOString()
-        }];
-      });
-    } finally {
-      setLoading(false);
       setIsTyping(false);
+      setLoading(false);
+    } catch (err) {
+      setIsTyping(false);
+      setLoading(false);
     }
   }
 
@@ -471,6 +509,14 @@ export default function ChatUI({ user, onLogout }) {
     const activeChat = chats.find(c => c.id === activeChatId);
     return activeChat?.title || "Sales AI Chatbot";
   };
+
+  // Add this helper to send a suggestion immediately
+  function handleSuggestionSend(suggestion) {
+    setInputValue(suggestion);
+    setTimeout(() => {
+      handleSend();
+    }, 0);
+  }
 
   return (
     <div className="base">
@@ -548,7 +594,102 @@ export default function ChatUI({ user, onLogout }) {
       <main className="main-container">
         {showAnalytics ? (
           <AnalyticsDashboard />
+        ) : isWelcomeMode ? (
+          // Welcome Mode
+          <div className="welcome-container">
+            <div className="welcome-content">
+              <div className="welcome-header">
+                <div className="welcome-icon">🤖</div>
+                <h1 className="welcome-title">FutureTec Sales AI</h1>
+                <p className="welcome-subtitle">
+                  Powered by advanced AI • Ready to analyze your sales data
+                </p>
+              </div>
+              
+              <div className="welcome-features">
+                <div className="feature-grid">
+                  <div className="feature-card">
+                    <span className="feature-icon">📊</span>
+                    <h3>Smart Analytics</h3>
+                    <p>Get instant insights from your sales data</p>
+                  </div>
+                  <div className="feature-card">
+                    <span className="feature-icon">🎨</span>
+                    <h3>Smart Visualization</h3>
+                    <p>Auto-generated charts and tables</p>
+                  </div>
+                  <div className="feature-card">
+                    <span className="feature-icon">⚡</span>
+                    <h3>Real-time Streaming</h3>
+                    <p>Progressive response loading</p>
+                  </div>
+                  <div className="feature-card">
+                    <span className="feature-icon">🧠</span>
+                    <h3>Business Intelligence</h3>
+                    <p>Proactive insights and alerts</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="welcome-suggestions">
+                <h3>Try asking:</h3>
+                <div className="suggestion-chips">
+                  <button 
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionSend("Show me division sales breakdown")}
+                  >
+                    📊 Division Sales Breakdown
+                  </button>
+                  <button 
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionSend("Top 10 customers by revenue")}
+                  >
+                    👥 Top Customers
+                  </button>
+                  <button 
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionSend("Sales performance by month")}
+                  >
+                    📈 Monthly Performance
+                  </button>
+                  <button 
+                    className="suggestion-chip"
+                    onClick={() => handleSuggestionSend("Product analysis with profit margins")}
+                  >
+                    🏷️ Product Analysis
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Always show the chat input bar, centered in welcome mode */}
+            <div className="chatbot-input welcome-input-center">
+              <div className="input-bar">
+                <textarea
+                  className="message-input"
+                  placeholder="Ask me about your sales data, analytics, or reports..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={loading}
+                  aria-label="Message input"
+                  autoComplete="off"
+                  rows={1}
+                  style={{ resize: "none" }}
+                />
+                <button
+                  className="send-button"
+                  onClick={handleSend}
+                  aria-label="Send message"
+                  disabled={loading || !inputValue.trim()}
+                >
+                  {loading ? "⏳" : "🚀"}
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
+          // Chat Mode
           <>
             <header className="header">
               <div className="header-content">
@@ -556,99 +697,72 @@ export default function ChatUI({ user, onLogout }) {
                 <div className="header-text">
                   <h1 className="header-title">{getActiveChatTitle()}</h1>
                   <p className="header-subtitle">
-                    Powered by Joud AI • {isTyping ? "Typing..." : "Ready to help"}
+                    Powered by FutureTec AI • {isTyping ? "Typing..." : "Ready to help"}
                   </p>
                 </div>
               </div>
             </header>
 
-        <section className="main">
-          {messages.length === 0 && (
-            <div className="welcome-message">
-              <div className="welcome-content">
-                <h2>Welcome to Joud Sales AI</h2>
-                <p>Ask me anything about your sales data, analytics, or performance metrics.</p>
-                <div className="quick-actions">
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => setInputValue("Show me top 5 customers by sales")}
-                  >
-                    📊 Top Customers
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => setInputValue("Generate sales report for this month")}
-                  >
-                    📈 Sales Report
-                  </button>
-                  <button 
-                    className="quick-action-btn"
-                    onClick={() => setInputValue("Show revenue trends over time")}
-                  >
-                    💰 Revenue Trends
-                  </button>
+            <section className="main">
+              {messages.map((msg) => (
+                <div
+                  key={`${msg.id}-${msg.timestamp}`}
+                  className={`message ${msg.sender === "user" ? "user" : "bot"}`}
+                >
+                  <div className="message-avatar">
+                    {msg.sender === "user" ? "👤" : "🤖"}
+                  </div>
+                  <div className="bubble">
+                    {msg.sender === "user" ? (
+                      <span className="user-message">{msg.content}</span>
+                    ) : (
+                      <BotMessage data={msg.content} />
+                    )}
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
+              ))}
 
-          {messages.map((msg) => (
-            <div
-              key={`${msg.id}-${msg.timestamp}`} // More unique key
-              className={`message ${msg.sender === "user" ? "user" : "bot"}`}
-            >
-              <div className="message-avatar">
-                {msg.sender === "user" ? "👤" : "🤖"}
-              </div>
-              <div className="bubble">
-                {msg.sender === "user" ? (
-                  <span className="user-message">{msg.content}</span>
-                ) : (
-                  <BotMessage data={msg.content} />
-                )}
-              </div>
-            </div>
-          ))}
-
-          {isTyping && (
-            <div className="message bot typing-indicator">
-              <div className="message-avatar">🤖</div>
-              <div className="bubble">
-                <div className="typing-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
+              {isTyping && (
+                <div className="message bot typing-indicator">
+                  <div className="message-avatar">🤖</div>
+                  <div className="bubble">
+                    <div className="typing-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  </div>
                 </div>
+              )}
+              
+              <div ref={messagesEndRef} />
+            </section>
+
+            {/* Always show the chat input bar at the bottom in chat mode */}
+            <div className="chatbot-input">
+              <div className="input-bar">
+                <textarea
+                  className="message-input"
+                  placeholder="Ask me about your sales data, analytics, or reports..."
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={loading}
+                  aria-label="Message input"
+                  autoComplete="off"
+                  rows={1}
+                  style={{ resize: "none" }}
+                />
+                <button
+                  className="send-button"
+                  onClick={handleSend}
+                  aria-label="Send message"
+                  disabled={loading || !inputValue.trim()}
+                >
+                  {loading ? "⏳" : "🚀"}
+                </button>
               </div>
             </div>
-          )}
-          
-          <div ref={messagesEndRef} />
-        </section>
-
-                  <footer className="chatbot-input">
-            <div className="input-bar">
-              <input
-                type="text"
-                className="message-input"
-                placeholder={loading ? "Processing your request..." : "Ask me about sales data, analytics, or reports..."}
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                disabled={loading}
-                aria-label="Message input"
-                autoComplete="off"
-              />
-              <button 
-                className="send-button"
-                onClick={handleSend}
-                aria-label="Send message"
-                disabled={loading || !inputValue.trim()}
-              >
-                {loading ? "⏳" : "🚀"}
-              </button>
-            </div>
-          </footer>
           </>
         )}
       </main>

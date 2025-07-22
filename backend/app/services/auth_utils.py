@@ -1,8 +1,8 @@
-
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import jwt, JWTError
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 from app.core.config import settings
 
 SECRET_KEY = settings.JWT_SECRET_KEY
@@ -29,4 +29,28 @@ def decode_access_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
+        return None
+
+def get_user_from_token(db: Session, token: str):
+    """🔧 NEW: Manually validate token and return user for streaming endpoints"""
+    try:
+        # Remove 'Bearer ' prefix if present
+        if token.startswith('Bearer '):
+            token = token[7:]
+        
+        payload = decode_access_token(token)
+        if not payload:
+            return None
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        
+        # Import User model here to avoid circular imports
+        from app.models.models import User
+        user = db.query(User).filter(User.id == int(user_id)).first()
+        return user
+        
+    except Exception as e:
+        print(f"Error in get_user_from_token: {e}")
         return None

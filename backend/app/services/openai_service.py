@@ -189,6 +189,12 @@ def enhance_sql_query(sql_query: str) -> str:
 def get_openai_response(user_input: str, conversation_history: list = None) -> dict:
     """Enhanced OpenAI response with smart handling and validation"""
     try:
+        # Handle different input types safely - CRITICAL FIX
+        if isinstance(user_input, list):
+            user_input = " ".join(str(item) for item in user_input)
+        elif not isinstance(user_input, str):
+            user_input = str(user_input)
+        
         # Get query complexity to adjust parameters
         complexity = get_query_complexity_score(user_input)
         
@@ -264,7 +270,7 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
         )
         
         content = response.choices[0].message.content
-        
+        print(f"[LLM RAW OUTPUT] {content}")  # Log raw LLM output
         if not content:
             return [{
                 "type": "text",
@@ -305,16 +311,28 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
             
             return parsed_response
             
-        except json.JSONDecodeError as e:
-            print(f"[openai_service] JSON decode error: {e}")
-            print(f"[openai_service] Raw content: {content}")
-            
-            # Try to extract meaningful text if JSON parsing fails
-            return [{
-                "type": "text",
-                "template": "I had trouble formatting my response. Here's what I found: " + content[:500],
-                "value_code": ""
-            }]
+        except Exception as e:
+            print(f"[LLM JSON ERROR] {e}")
+            # Try to auto-fix
+            cleaned = clean_json_response(content)
+            try:
+                parsed_response = parse_openai_response(cleaned)
+                is_valid, error_msg = validate_response_structure(parsed_response)
+                if not is_valid:
+                    print(f"[openai_service] Validation error after auto-fix: {error_msg}")
+                    return [{
+                        "type": "text",
+                        "template": "Sorry, I had trouble formatting my answer. Please try rephrasing your question.",
+                        "value_code": ""
+                    }]
+                return parsed_response
+            except Exception as e2:
+                print(f"[LLM JSON AUTO-FIX FAILED] {e2}")
+                return [{
+                    "type": "text",
+                    "template": "Sorry, I had trouble formatting my answer. Please try rephrasing your question.",
+                    "value_code": ""
+                }]
             
     except Exception as e:
         print(f"[openai_service] OpenAI API error: {e}")
@@ -324,8 +342,83 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
             "value_code": ""
         }]
 
+async def get_openai_response_stream(user_input: str, conversation_history: list = None):
+    """🌊 NEW: Streaming version that yields text chunks as they arrive from OpenAI"""
+    
+    # Type safety fix
+    if isinstance(user_input, list):
+        user_input = " ".join(str(item) for item in user_input)
+    elif not isinstance(user_input, str):
+        user_input = str(user_input)
+    
+    try:
+        # Build the enhanced system prompt
+        enhanced_system = build_final_prompt(user_input, conversation_history)
+        
+        # Dynamic parameters based on query complexity
+        complexity = get_query_complexity_score(user_input)
+        temperature = min(0.2 + (complexity * 0.1), 0.7)
+        max_tokens = min(2000 + (complexity * 500), 4000)
+        
+        enhanced_system += f"""
+
+5. Format all monetary values in KWD with 3 decimal places
+6. Use current date context: {time.strftime('%Y-%m-%d')}
+
+Query Complexity Level: {complexity}/5
+Response should be: {'detailed with multiple blocks' if complexity > 3 else 'focused and concise'}
+"""
+        
+        # 🌊 Make STREAMING API call
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": enhanced_system},
+                {"role": "user", "content": user_input}
+            ],
+            timeout=45,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=0.95,
+            frequency_penalty=0.1,
+            presence_penalty=0.1,
+            stream=True  # 🌊 Enable streaming
+        )
+        
+        # 🌊 Yield chunks as they arrive
+        accumulated_content = ""
+        for chunk in response:
+            if chunk.choices[0].delta.content is not None:
+                chunk_text = chunk.choices[0].delta.content
+                accumulated_content += chunk_text
+                yield {
+                    "type": "text_chunk",
+                    "content": chunk_text,
+                    "accumulated": accumulated_content
+                }
+        
+        # 🌊 Signal completion and return final parsed response
+        yield {
+            "type": "stream_complete",
+            "final_content": accumulated_content
+        }
+        
+    except Exception as e:
+        print(f"[openai_service] Error in streaming: {e}")
+        yield {
+            "type": "error",
+            "content": f"Error generating response: {str(e)}"
+        }
+
 def analyze_query_intent(user_input: str) -> dict:
     """Analyze user query to provide better responses"""
+    
+    # Handle different input types safely
+    if isinstance(user_input, list):
+        user_input = " ".join(str(item) for item in user_input)
+    elif not isinstance(user_input, str):
+        user_input = str(user_input)
+    
     intent = {
         "type": "general",
         "entities": [],
