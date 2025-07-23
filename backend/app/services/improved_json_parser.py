@@ -1,7 +1,20 @@
 import json
 import re
 from typing import Union, List, Dict, Any
+from decimal import Decimal
 import regex as re
+
+def convert_decimals(obj):
+    """Convert Decimal objects to float for JSON serialization"""
+    if isinstance(obj, list):
+        return [convert_decimals(i) for i in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_decimals(v) for k, v in obj.items()}
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    else:
+        return obj
+
 def smart_json_parser(content: str) -> Union[List[Dict], Dict]:
     """
     Smart JSON parser that handles common OpenAI response formatting issues

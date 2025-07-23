@@ -24,8 +24,19 @@ def handle_chart(response):
         y_column = response.get("y")
         chart_title = response.get("title", "")
         chart_kind = response.get("kind", "bar")
+        
+        # Type safety checks - prevent 'list' object has no attribute 'lower' errors
+        if isinstance(x_column, list):
+            x_column = str(x_column[0]) if x_column else "unknown"
+        elif not isinstance(x_column, str):
+            x_column = str(x_column) if x_column else "unknown"
+        
+        if isinstance(y_column, list):
+            y_column = str(y_column[0]) if y_column else "unknown"  
+        elif not isinstance(y_column, str):
+            y_column = str(y_column) if y_column else "unknown"
 
-        print(f"[CHART HANDLER] Input: {response}")  # Debug log
+        print(f"[CHART HANDLER] Type-safe Input - X: {x_column}, Y: {y_column}, Kind: {chart_kind}")  # Debug log
 
         # Enhanced handling for new chart types
         if isinstance(x_column, list):
@@ -51,6 +62,16 @@ def handle_chart(response):
         try:
             # Execute the SQL safely with timeout
             rows, columns = execute_query_with_timeout(sql, timeout=30)
+            
+            # Type safety for columns - ensure all are strings
+            safe_columns = []
+            for col in columns:
+                if isinstance(col, str):
+                    safe_columns.append(col)
+                else:
+                    safe_columns.append(str(col))
+            columns = safe_columns
+            
             normalized_cols = [col.lower() for col in columns]
             print(f"[CHART HANDLER] Query returned {len(rows)} rows with columns: {columns}")
         except TimeoutError:
@@ -271,3 +292,4 @@ def handle_chart(response):
             "type": "text",
             "text": f"⚠️ Chart generation failed: {str(e)}"
         }
+

@@ -4,38 +4,61 @@ import "../styles/login.css";
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Clear messages when switching modes
+  useEffect(() => {
+    setError("");
+    setSuccess("");
+  }, [isRegisterMode]);
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setSuccess("");
     setLoading(true);
 
+    const endpoint = isRegisterMode ? "/auth/register" : "/auth/login";
+    const requestBody = isRegisterMode 
+      ? { username, password, email }
+      : { username, password };
+
     try {
-      const res = await fetch("http://localhost:8845/auth/login", {
+      const res = await fetch(`http://localhost:8845${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify(requestBody),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        setError("Invalid username or password");
+        setError(data.detail || (isRegisterMode ? "Registration failed" : "Invalid username or password"));
         setLoading(false);
         return;
       }
       
-      const data = await res.json();
-      
-      if (data.access_token) {
-        onLogin({ username, token: data.access_token });
+      if (isRegisterMode) {
+        setSuccess("Registration successful! You can now login.");
+        setIsRegisterMode(false);
+        setUsername("");
+        setPassword("");
+        setEmail("");
       } else {
-        setError("Login failed: No token received");
+        if (data.access_token) {
+          onLogin({ username, token: data.access_token });
+        } else {
+          setError("Login failed: No token received");
+        }
       }
 
     } catch (err) {
@@ -63,13 +86,13 @@ export default function Login({ onLogin }) {
           <h2>
             <span className="welcome-text">Welcome to</span>
             <br />
-            <span className="brand-text">Joud</span>
+            <span className="brand-text">FutureTec</span>
             <br />
             <span className="ai-text">Sales AI</span>
           </h2>
           <div className="login-desc">
-            <span className="desc-icon">🚀</span>
-            Sign in to unlock the future of sales
+            <span className="desc-icon">🤖</span>
+            {isRegisterMode ? "Join the future of sales analytics" : "Sign in to unlock the future of sales"}
           </div>
         </div>
 
@@ -86,6 +109,20 @@ export default function Login({ onLogin }) {
             />
             <div className="input-focus-line"></div>
           </div>
+          
+          {isRegisterMode && (
+            <div className="input-wrapper">
+              <input
+                className="login-input"
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <div className="input-focus-line"></div>
+            </div>
+          )}
           
           <div className="input-wrapper">
             <input
@@ -107,23 +144,42 @@ export default function Login({ onLogin }) {
           </div>
         )}
 
+        {success && (
+          <div className="login-success">
+            <span className="success-icon">✅</span>
+            {success}
+          </div>
+        )}
+
         <button
           className={`login-btn ${loading ? 'loading' : ''}`}
           type="submit"
           disabled={loading}
         >
           {loading ? (
-            <span className="loading-content">
-              <span className="loading-spinner"></span>
-              Signing In...
-            </span>
+            <div className="login-spinner">
+              <div className="spinner"></div>
+              <span>{isRegisterMode ? "Creating Account..." : "Signing In..."}</span>
+            </div>
           ) : (
-            <span className="btn-content">
-              <span className="btn-icon">🔐</span>
-              Sign In
-            </span>
+            <>
+              <span className="btn-icon">{isRegisterMode ? "👥" : "🔐"}</span>
+              {isRegisterMode ? "Create Account" : "Sign In"}
+            </>
           )}
         </button>
+
+        <div className="mode-toggle">
+          <button
+            type="button"
+            className="toggle-btn"
+            onClick={() => setIsRegisterMode(!isRegisterMode)}
+          >
+            {isRegisterMode 
+              ? "Already have an account? Sign in" 
+              : "Don't have an account? Register"}
+          </button>
+        </div>
 
         <div className="footer-text">
           Powered by <span className="footer-brand">Joud AI</span>
