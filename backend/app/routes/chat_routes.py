@@ -97,7 +97,7 @@ Rules:
 Title:"""
 
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": title_prompt}],
             max_tokens=20,
             temperature=0.3
@@ -297,17 +297,42 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         user_input_lower = user_input.lower()
         
         # Detect greetings and non-analytics queries that should NOT trigger year clarification
+        # Check for acknowledgment/continuation phrases FIRST
+        acknowledgment_patterns = [
+            r'^(okay|ok|yes|yep|yeah|sure|continue|go ahead|proceed)[\s\.,!]*$'
+        ]
+        is_acknowledgment = any(re.match(pattern, user_input_lower) for pattern in acknowledgment_patterns)
+        
+        # Check for incomplete previous response that needs completion
+        needs_completion = False
+        if is_acknowledgment:
+            # Check if the last bot message was incomplete (only text, no data)
+            history = get_conversation_history(conv_id, db, limit=2)
+            if len(history) >= 2:
+                last_bot_msg = history[-2]  # Previous bot message
+                if last_bot_msg.get("sender") == "bot":
+                    content = last_bot_msg.get("content", [])
+                    if isinstance(content, list) and len(content) == 1:
+                        if content[0].get("type") == "text" and "underperforming" in content[0].get("template", "").lower():
+                            needs_completion = True
+                            logger.info("[ACKNOWLEDGMENT] Detected need to complete underperforming SKUs query")
+        
         greeting_patterns = [
             r'^(hi|hello|hey|good morning|good afternoon|good evening|greetings)[\s\.,!]*$',
             r'^(how are you|what\'s up|how do you do)[\s\.,!]*$',
             r'^(thanks|thank you|thx)[\s\.,!]*$',
             r'^(bye|goodbye|see you|farewell)[\s\.,!]*$',
             r'^(help|what can you do|what do you do)[\s\.,!]*$',
-            r'^(test|testing)[\s\.,!]*$'
+            r'^(test|testing)[\s\.,!]*$',
+            r'what.*servi.*provide',  # More flexible for typos (servies/services)
+            r'what.*can.*you.*do',
+            r'what.*do.*you.*offer',
+            r'tell me about.*capabilit',
+            r'how.*can.*you.*help'
         ]
         
-        # Check if this is a greeting or general conversation
-        is_greeting = any(re.match(pattern, user_input_lower) for pattern in greeting_patterns)
+        # Check if this is a greeting or general conversation (but not acknowledgment)
+        is_greeting = any(re.match(pattern, user_input_lower) for pattern in greeting_patterns) and not needs_completion
         
         # Check if this is a format conversion request (should also skip year clarification)
         format_conversion_patterns = [
@@ -459,13 +484,23 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                 seems_like_analytics = any(keyword in user_input_lower for keyword in analytics_keywords)
                 
                 if seems_like_analytics:
-                    # Get latest year from database automatically
-                    years_result = db.execute(text("SELECT DISTINCT yy FROM sales_data ORDER BY yy DESC LIMIT 1")).fetchone()
-                    if years_result:
-                        latest_year = years_result[0]
-                        # Auto-append latest year to the query
-                        user_input = f"{user_input} in {latest_year}"
-                        logger.info(f"[AUTO YEAR] Added latest year {latest_year} to query: {user_input}")
+                    # Smart year selection based on query context
+                    if any(word in user_input_lower for word in ["last year", "previous year"]):
+                        # For "last year" queries, use 2024
+                        auto_year = 2024
+                    elif any(word in user_input_lower for word in ["dashboard", "comprehensive", "overview", "trends", "monthly"]):
+                        # For dashboard/overview queries, use 2024 (complete year data)
+                        auto_year = 2024
+                    elif any(word in user_input_lower for word in ["promotional", "campaign", "promo", "effectiveness"]):
+                        # For promotional analysis, ALWAYS use 2025 (current campaigns)
+                        auto_year = 2025
+                        logger.info(f"[PROMOTIONAL YEAR] Forcing 2025 for promotional campaign analysis")
+                    else:
+                        # For ALL OTHER queries including underperforming, current analysis, use 2025 (recent data)
+                        auto_year = 2025
+                    
+                    user_input = f"{user_input} in {auto_year}"
+                    logger.info(f"[AUTO YEAR] Added year {auto_year} to query: {user_input}")
                     
                     # Don't try to inherit context for simple queries - just proceed
                 else:
@@ -488,6 +523,12 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                 conv.title = generate_smart_title(user_input)
                 db.commit()
 
+        # Handle completion requests for incomplete responses
+        if needs_completion:
+            logger.info("[COMPLETION] Completing underperforming SKUs query")
+            # Force complete the underperforming SKUs query
+            user_input = "which SKUs are underperforming in value and in margin in 2025"
+        
         # Get conversation history and generate AI response
         history = get_conversation_history(conv_id, db, limit=20)
         

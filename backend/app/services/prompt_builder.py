@@ -17,11 +17,27 @@ def get_smart_context(user_input: str) -> dict:
     elif not isinstance(user_input, str):
         user_input = str(user_input)
     
+    # 🎯 PLACEHOLDER DETECTION - Flag when user uses generic placeholders
+    placeholder_patterns = [
+        r'\bproduct\s+[xyz]\b',
+        r'\bitem\s+[xyz]\b', 
+        r'\bcustomer\s+[xyz]\b',
+        r'\bclient\s+[xyz]\b',
+        r'\bdivision\s+[xyz]\b',
+        r'\bbrand\s+[xyz]\b'
+    ]
+    
+    # 🚨 EXCLUDE common business terms that aren't placeholders
+    business_terms = ['skus', 'all brands', 'all products', 'all customers', 'all divisions', 'by brand', 'all brand', 'every brand', 'each brand', 'underperforming', 'which skus', 'what skus']
+    user_lower = user_input.lower()
+    is_business_term = any(term in user_lower for term in business_terms)
+    
     context = {
         "time_period": "current_year",
         "focus_area": "general",
         "comparison_needed": False,
-        "top_n": 10
+        "top_n": 10,
+        "has_placeholder": any(re.search(pattern, user_input.lower()) for pattern in placeholder_patterns) and not is_business_term
     }
     
     # Time period detection
@@ -695,24 +711,25 @@ def get_temporal_intelligence(user_input: str) -> dict:
         "specific_periods": [],
         "growth_analysis": False,
         "seasonal_context": "standard",
-        "forecast_horizon": None
+        "forecast_horizon": None,
+        "smart_suggestions": []
     }
     
     user_lower = user_input.lower()
     current_date = datetime.now()
     
-    # Detect specific time periods
-    if any(phrase in user_lower for phrase in ["last quarter", "previous quarter", "q4", "fourth quarter"]):
+    # Detect specific time periods (Database: 2023-2025, Latest: 2025-05)
+    if any(phrase in user_lower for phrase in ["last quarter", "previous quarter", "q1"]):
         temporal_context["time_scope"] = "last_quarter"
-        temporal_context["specific_periods"].append("Q4 2024 (Oct-Dec)")
+        temporal_context["specific_periods"].append("Q1 2025 (Jan-Mar)")
         
-    elif any(phrase in user_lower for phrase in ["this year", "2024", "current year"]):
+    elif any(phrase in user_lower for phrase in ["this year", "2025", "current year"]):
         temporal_context["time_scope"] = "current_year"
-        temporal_context["specific_periods"].append("2024")
+        temporal_context["specific_periods"].append("2025")
         
-    elif any(phrase in user_lower for phrase in ["last year", "2023", "previous year"]):
+    elif any(phrase in user_lower for phrase in ["last year", "2024", "previous year"]):
         temporal_context["time_scope"] = "previous_year" 
-        temporal_context["specific_periods"].append("2023")
+        temporal_context["specific_periods"].append("2024")
         
     elif any(phrase in user_lower for phrase in ["month", "monthly", "mtd"]):
         temporal_context["time_scope"] = "monthly"

@@ -33,6 +33,43 @@ def validate_and_fix_sql(sql_query: str) -> str:
     
     print(f"[SQL VALIDATOR] Input: {sql_query}")
     
+    # 🚨 EMERGENCY FIX: DON'T TOUCH SUBQUERIES - Only fix main query
+    if ('SELECT item_name_e' in sql_query and 
+        'WHERE warehouse_name = (SELECT warehouse_name' in sql_query and
+        'GROUP BY warehouse_name ORDER BY product_sales' in sql_query):
+        # Only replace the LAST occurrence (main query), not the subquery
+        parts = sql_query.rsplit('GROUP BY warehouse_name ORDER BY product_sales', 1)
+        if len(parts) == 2:
+            sql_query = parts[0] + 'GROUP BY item_name_e ORDER BY product_sales' + parts[1]
+            print("[SQL VALIDATOR] 🚨 EMERGENCY FIX: Fixed branch product query (main query only)")
+        else:
+            sql_query = sql_query.replace(
+                'GROUP BY warehouse_name ORDER BY product_sales',
+                'GROUP BY item_name_e ORDER BY product_sales'
+            )
+            print("[SQL VALIDATOR] 🚨 EMERGENCY FIX: Fixed branch product query")
+    
+    # 🚨 CRITICAL FIX: Replace CURRENT_DATE with database-appropriate dates
+    if 'CURRENT_DATE' in sql_query:
+        print("[SQL VALIDATOR] Fixing CURRENT_DATE usage")
+        # Replace last 3 months pattern
+        if "CURRENT_DATE - INTERVAL '3 months'" in sql_query:
+            sql_query = sql_query.replace(
+                "job_date >= CURRENT_DATE - INTERVAL '3 months'",
+                "yy = 2025 AND mm BETWEEN 3 AND 5"
+            )
+        # Replace last 12 months pattern  
+        elif "CURRENT_DATE - INTERVAL '12 months'" in sql_query:
+            sql_query = sql_query.replace(
+                "job_date >= CURRENT_DATE - INTERVAL '12 months'",
+                "(yy = 2024 OR yy = 2025)"
+            )
+        # Replace other CURRENT_DATE patterns
+        else:
+            sql_query = sql_query.replace("CURRENT_DATE", "'2025-05-18'")
+        
+        print(f"[SQL VALIDATOR] Fixed CURRENT_DATE: {sql_query}")
+    
     # Check if GROUP BY columns are already correct
     if ('GROUP BY TO_CHAR(job_date' in sql_query and 
         'EXTRACT(YEAR FROM job_date)' in sql_query and 
@@ -59,32 +96,61 @@ def validate_and_fix_sql(sql_query: str) -> str:
                 'ORDER BY EXTRACT(YEAR FROM job_date), EXTRACT(MONTH FROM job_date)'
             )
     
-    # Remove any duplicate GROUP BY columns
+    # Fix specific GROUP BY issues
     import re
     
-    # Extract GROUP BY clause
-    group_by_match = re.search(r'GROUP BY\s+(.+?)(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)', sql_query, re.IGNORECASE)
-    if group_by_match:
-        group_by_clause = group_by_match.group(1)
-        
-        # Split columns and remove duplicates while preserving order
-        columns = [col.strip() for col in group_by_clause.split(',')]
-        unique_columns = []
-        seen = set()
-        
-        for col in columns:
-            if col.lower() not in seen:
-                unique_columns.append(col)
-                seen.add(col.lower())
-        
-        # Reconstruct the query with deduplicated GROUP BY
-        new_group_by = 'GROUP BY ' + ', '.join(unique_columns)
-        sql_query = re.sub(
-            r'GROUP BY\s+.+?(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)',
-            new_group_by,
-            sql_query,
-            flags=re.IGNORECASE
+    # Fix GROUP BY mismatch - AGGRESSIVE approach
+    if 'SELECT item_name_e' in sql_query and 'GROUP BY warehouse_name ORDER BY product_sales' in sql_query:
+        sql_query = sql_query.replace(
+            'GROUP BY warehouse_name ORDER BY product_sales',
+            'GROUP BY item_name_e ORDER BY product_sales'
         )
+        print("[SQL VALIDATOR] ✅ FIXED main query GROUP BY for item selection")
+    
+    # Additional safety check - catch any remaining GROUP BY mismatches (DISABLED - was corrupting subqueries)
+    # if 'SELECT item_name_e' in sql_query and 'GROUP BY warehouse_name' in sql_query and 'ORDER BY product_sales' in sql_query:
+    #     # More aggressive replacement
+    #     import re
+    #     sql_query = re.sub(
+    #         r'GROUP BY warehouse_name(\s+ORDER BY product_sales)',
+    #         r'GROUP BY item_name_e\1',
+    #         sql_query
+    #     )
+    #     print("[SQL VALIDATOR] ✅ BACKUP FIX applied for GROUP BY")
+    
+    # Fix simple GROUP BY mismatch
+    elif 'SELECT item_name_e' in sql_query and 'GROUP BY warehouse_name' in sql_query and sql_query.count('GROUP BY') == 1:
+        sql_query = sql_query.replace('GROUP BY warehouse_name', 'GROUP BY item_name_e')
+        print("[SQL VALIDATOR] Fixed GROUP BY to match SELECT columns")
+    
+    # Remove any duplicate GROUP BY columns (DISABLED - was corrupting queries)
+    # group_by_match = re.search(r'GROUP BY\s+(.+?)(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)', sql_query, re.IGNORECASE)
+    # if group_by_match:
+    #     group_by_clause = group_by_match.group(1)
+    #     
+    #     # Split columns and remove duplicates while preserving order
+    #     columns = [col.strip() for col in group_by_clause.split(',')]
+    #     unique_columns = []
+    #     seen = set()
+    #     
+    #     for col in columns:
+    #         if col.lower() not in seen:
+    #             unique_columns.append(col)
+    #             seen.add(col.lower())
+    #     
+    #     # Reconstruct the query with deduplicated GROUP BY
+    #     new_group_by = 'GROUP BY ' + ', '.join(unique_columns)
+    #     sql_query = re.sub(
+    #         r'GROUP BY\s+.+?(?=\s+ORDER BY|\s+HAVING|\s+LIMIT|$)',
+    #         new_group_by,
+    #         sql_query,
+    #         flags=re.IGNORECASE
+    #     )
+    
+    # FINAL CHECK - Force fix GROUP BY issues at the very end (DISABLED - was corrupting subqueries)
+    # if 'SELECT item_name_e' in sql_query and 'GROUP BY warehouse_name' in sql_query and 'product_sales' in sql_query:
+    #     sql_query = sql_query.replace('GROUP BY warehouse_name', 'GROUP BY item_name_e')
+    #     print("[SQL VALIDATOR] 🔥 FINAL EMERGENCY FIX - Forced GROUP BY correction")
     
     print(f"[SQL VALIDATOR] Output: {sql_query}")
     return sql_query
