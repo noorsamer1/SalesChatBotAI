@@ -1742,3 +1742,104 @@ tbody tr:hover {
 }
 
 /* In chat mode, .chatbot-input stays sticky at the bottom as before */
+
+/* Delete Confirmation Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  animation: modalFadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  border: 1px solid #475569;
+  border-radius: 16px;
+  padding: 32px;
+  min-width: 400px;
+  max-width: 500px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  animation: modalSlideIn 0.2s ease-out;
+}
+
+.modal-content h2 {
+  color: #f1f5f9;
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  text-align: center;
+}
+
+.modal-content p {
+  color: #cbd5e1;
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 24px 0;
+  text-align: center;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.modal-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 100px;
+}
+
+.cancel-btn {
+  background: #475569;
+  color: #f1f5f9;
+}
+
+.cancel-btn:hover {
+  background: #64748b;
+  transform: translateY(-1px);
+}
+
+.confirm-btn {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+}
+
+.confirm-btn:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

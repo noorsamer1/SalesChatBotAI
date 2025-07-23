@@ -18,6 +18,8 @@ export default function ChatUI({ user, onLogout }) {
   const [messageCache, setMessageCache] = useState(new Map()); // Cache for messages
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [isWelcomeMode, setIsWelcomeMode] = useState(true); // 🆕 NEW: Welcome state like ChatGPT
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [chatToDelete, setChatToDelete] = useState(null);
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -240,11 +242,18 @@ export default function ChatUI({ user, onLogout }) {
 
   // Delete chat with confirm
   async function handleDeleteChat(chatId) {
-    if (!window.confirm("Delete this chat?")) return;
+    // Show custom modal instead of browser confirm
+    setChatToDelete(chatId);
+    setShowDeleteModal(true);
+  }
+
+  // Confirm delete from modal
+  async function confirmDeleteChat() {
+    if (!chatToDelete) return;
     
     try {
       // Delete from backend first
-      const res = await fetch(`http://localhost:8845/chat/conversations/${chatId}`, {
+      const res = await fetch(`http://localhost:8845/chat/conversations/${chatToDelete}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
@@ -258,28 +267,44 @@ export default function ChatUI({ user, onLogout }) {
       // Remove from cache
       setMessageCache(prev => {
         const newCache = new Map(prev);
-        newCache.delete(chatId);
+        newCache.delete(chatToDelete);
         return newCache;
       });
       
       // If backend deletion successful, update frontend
       setChats(prevChats => {
-        const updated = prevChats.filter((c) => c.id !== chatId);
+        const updated = prevChats.filter((c) => c.id !== chatToDelete);
         
         // Update active chat if we're deleting the current one
-        if (activeChatId === chatId) {
+        if (activeChatId === chatToDelete) {
           const nextChat = updated[0];
           setActiveChatId(nextChat?.id ?? null);
           setMessages(nextChat ? messageCache.get(nextChat.id) || [] : []);
+          // If no chats left, go to welcome mode
+          if (updated.length === 0) {
+            setIsWelcomeMode(true);
+          }
         }
         
         return updated;
       });
       
+      // Close modal
+      setShowDeleteModal(false);
+      setChatToDelete(null);
+      
     } catch (err) {
       console.error("Error deleting chat:", err);
       alert("Error: Could not delete chat. Please try again.");
+      setShowDeleteModal(false);
+      setChatToDelete(null);
     }
+  }
+
+  // Cancel delete from modal
+  function cancelDeleteChat() {
+    setShowDeleteModal(false);
+    setChatToDelete(null);
   }
 
   // Select and load a chat
@@ -766,6 +791,24 @@ export default function ChatUI({ user, onLogout }) {
           </>
         )}
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2>Confirm Deletion</h2>
+            <p>Are you sure you want to delete this chat?</p>
+            <div className="modal-actions">
+              <button className="modal-btn cancel-btn" onClick={cancelDeleteChat}>
+                Cancel
+              </button>
+              <button className="modal-btn confirm-btn" onClick={confirmDeleteChat}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

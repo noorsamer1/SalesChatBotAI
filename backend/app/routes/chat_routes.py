@@ -204,10 +204,11 @@ def delete_conversation(conv_id: int, db: Session = Depends(get_db), user=Depend
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
         
-        # Delete all messages first
-        db.query(Message).filter(Message.conversation_id == conv_id).delete()
+        # Delete all messages first to avoid foreign key constraint violation
+        deleted_messages = db.query(Message).filter(Message.conversation_id == conv_id).delete()
+        logger.info(f"Deleted {deleted_messages} messages for conversation {conv_id}")
         
-        # Delete the conversation
+        # Now delete the conversation
         db.delete(conv)
         db.commit()
         
@@ -272,6 +273,19 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
+        # Clear any orphaned pending questions that might cause issues
+        if hasattr(conv, "pending_question") and conv.pending_question:
+            # Check if the pending question is very old (more than 10 messages ago)
+            recent_messages = db.query(Message).filter(
+                Message.conversation_id == conv_id
+            ).order_by(Message.timestamp.desc()).limit(10).all()
+            
+            # If we have recent messages, clear old pending questions
+            if len(recent_messages) >= 5:
+                logger.info(f"[CLEANUP] Clearing old pending question: {conv.pending_question}")
+                conv.pending_question = None
+                db.commit()
+
         # Save user message
         user_msg = Message(conversation_id=conv_id, sender="user", content=msg.content)
         db.add(user_msg)
@@ -281,6 +295,31 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         # Clean user input for analysis
         user_input = msg.content.strip()
         user_input_lower = user_input.lower()
+        
+        # Detect greetings and non-analytics queries that should NOT trigger year clarification
+        greeting_patterns = [
+            r'^(hi|hello|hey|good morning|good afternoon|good evening|greetings)[\s\.,!]*$',
+            r'^(how are you|what\'s up|how do you do)[\s\.,!]*$',
+            r'^(thanks|thank you|thx)[\s\.,!]*$',
+            r'^(bye|goodbye|see you|farewell)[\s\.,!]*$',
+            r'^(help|what can you do|what do you do)[\s\.,!]*$',
+            r'^(test|testing)[\s\.,!]*$'
+        ]
+        
+        # Check if this is a greeting or general conversation
+        is_greeting = any(re.match(pattern, user_input_lower) for pattern in greeting_patterns)
+        
+        # Check if this is a format conversion request (should also skip year clarification)
+        format_conversion_patterns = [
+            "show as a bar chart", "show as a chart", "convert to chart", "show as table", 
+            "table format", "chart view", "make it a table", "as a table", "as a chart", 
+            "convert to table", "give it to me as a table", "display as table", 
+            "display as chart", "chart please", "table please", "as a line chart",
+            "as a bar chart", "as a donut chart", "as a pie chart", "show as line chart",
+            "show as bar chart", "convert to line chart", "convert to bar chart",
+            "make it a line chart", "make it a bar chart", "line chart", "bar chart"
+        ]
+        is_format_conversion = any(phrase in user_input_lower for phrase in format_conversion_patterns)
         
         # Robust year/period detection patterns
         year_match = re.search(r"\b(20\d{2})\b", user_input)
@@ -327,81 +366,23 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         
         # Priority 3: If no time info and no pending question, check for context inheritance
         if not has_time_info and not (hasattr(conv, "pending_question") and conv.pending_question):
-            # Try to inherit context from previous messages
-            history = get_conversation_history(conv_id, db, limit=20)
-            context_inherited = False
-            
-            # Look for previous context in reverse order (most recent first)
-            for prev_msg in reversed(history[:-1]):  # Exclude current message
-                if prev_msg["sender"] == "bot":
-                    prev_content = prev_msg["content"]
-                    
-                    # Extract content text for analysis
-                    if isinstance(prev_content, list) and prev_content:
-                        # Look for year/period in the first text block
-                        first_block = prev_content[0]
-                        if isinstance(first_block, dict) and "template" in first_block:
-                            prev_text = first_block["template"].lower()
-                            
-                            # Find year/period context
-                            prev_year = re.search(r"\b(20\d{2})\b", prev_text)
-                            prev_multi_year = re.search(r"(20\d{2})\s*(?:-|to|and|vs)\s*(20\d{2})", prev_text)
-                            prev_all_years = re.search(r"all years|all time|entire period", prev_text)
-                            prev_period = re.search(r"q[1-4]|quarter|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec", prev_text)
-                            
-                            # Find entity context (what was being analyzed)
-                            entity_patterns = [
-                                r"salesman|salespeople|sales team|sales staff",
-                                r"customer|client", 
-                                r"brand|product brand",
-                                r"product|item",
-                                r"division|department",
-                                r"warehouse|branch|location",
-                                r"top \d+|highest|best|leading"
-                            ]
-                            
-                            entity_context = None
-                            for pattern in entity_patterns:
-                                match = re.search(pattern, prev_text)
-                                if match:
-                                    entity_context = match.group(0)
-                                    break
-                            
-                            # If we found time and entity context, inherit it
-                            if (prev_year or prev_multi_year or prev_all_years or prev_period) and entity_context:
-                                time_context = ""
-                                if prev_multi_year:
-                                    time_context = prev_multi_year.group(0)
-                                elif prev_year:
-                                    time_context = f"in {prev_year.group(0)}"
-                                elif prev_all_years:
-                                    time_context = "for all years"
-                                elif prev_period:
-                                    time_context = f"for {prev_period.group(0)}"
-                                
-                                # Construct inherited query
-                                user_input = f"{user_input} for the same {entity_context} {time_context}"
-                                logger.info(f"[CONTEXT INHERITED] {user_input}")
-                                context_inherited = True
-                                break
-            
-            # Priority 4: If still no context, ask for year clarification
-            if not context_inherited:
-                # Get available years from database
-                years = db.execute(text("SELECT DISTINCT yy FROM sales_data ORDER BY yy DESC")).fetchall()
-                year_list = ", ".join(str(y[0]) for y in years)
+            # Handle greetings immediately without OpenAI calls
+            if is_greeting:
+                # Generate immediate greeting response
+                if any(word in user_input_lower for word in ['help', 'what can you do', 'what do you do']):
+                    bot_reply = [{
+                        "type": "text",
+                        "template": "I'm FutureTec, your specialized sales analytics AI assistant. I can help you with: 📊 Sales performance analysis, 🏆 Top customers/products/salespeople rankings, 📈 Revenue and profit trends, 🔄 Returns and quality analysis, 📅 Time-based comparisons (monthly, quarterly, yearly), 🎯 Customer segmentation, 📍 Geographic performance analysis. Just ask me any sales-related question and I'll provide detailed insights with data tables and charts!",
+                        "value_code": ""
+                    }]
+                else:
+                    bot_reply = [{
+                        "type": "text", 
+                        "template": "Hello! I'm FutureTec, your AI sales analytics assistant for Kuwait market data. I can help you analyze sales performance, customer insights, product trends, and business metrics. What would you like to explore today?",
+                        "value_code": ""
+                    }]
                 
-                # Store the original question
-                conv.pending_question = msg.content.strip()
-                db.commit()
-                
-                # Ask for year clarification
-                bot_reply = [{
-                    "type": "text",
-                    "template": f"Which year would you like to analyze? Available years are: {year_list}.",
-                    "value_code": ""
-                }]
-                
+                # Save bot response immediately
                 bot_content = json.dumps(bot_reply)
                 bot_msg = Message(conversation_id=conv_id, sender="bot", content=bot_content)
                 db.add(bot_msg)
@@ -423,6 +404,73 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                     },
                     "conversation_title": conv.title
                 }
+            
+            # Handle format conversions with context preservation
+            elif is_format_conversion:
+                # Look for previous data to convert
+                history = get_conversation_history(conv_id, db, limit=5)
+                previous_data_found = False
+                
+                for prev_msg in reversed(history[:-1]):  # Exclude current message
+                    if prev_msg["sender"] == "bot":
+                        prev_content = prev_msg["content"]
+                        
+                        # Check if previous message had table/chart data
+                        if isinstance(prev_content, list):
+                            for block in prev_content:
+                                if isinstance(block, dict) and block.get("type") in ["table", "chart"] and "code" in block:
+                                    # Found previous data - construct conversion request with context
+                                    chart_type = "line chart" if "line" in user_input_lower else "bar chart" if "bar" in user_input_lower else "chart"
+                                    
+                                    # Extract the business context from the previous text block
+                                    text_block = next((b for b in prev_content if b.get("type") == "text"), {})
+                                    context_text = text_block.get("template", "")
+                                    
+                                    # Find year/period in the context
+                                    prev_year = re.search(r"\b(20\d{2})\b", context_text)
+                                    prev_period = re.search(r"q[1-4]|quarter|all years|all time", context_text.lower())
+                                    
+                                    time_context = ""
+                                    if prev_year:
+                                        time_context = f" in {prev_year.group(0)}"
+                                    elif prev_period:
+                                        time_context = f" for {prev_period.group(0)}"
+                                    
+                                    # Construct a complete request that includes the business context
+                                    user_input = f"Show the same data as {chart_type}{time_context}"
+                                    previous_data_found = True
+                                    logger.info(f"[FORMAT CONVERSION] Converted to: {user_input}")
+                                    break
+                            
+                            if previous_data_found:
+                                break
+                
+                # If no previous data found, proceed normally
+                if not previous_data_found:
+                    user_input = msg.content.strip()
+            else:
+                # Check if this is a simple analytics query that should get latest year automatically
+                analytics_keywords = [
+                    "top", "best", "highest", "lowest", "sales", "revenue", "profit", "return", 
+                    "customer", "product", "brand", "division", "performance", "analysis", 
+                    "trend", "growth", "compare", "show me", "list", "which", "what", "how much"
+                ]
+                
+                seems_like_analytics = any(keyword in user_input_lower for keyword in analytics_keywords)
+                
+                if seems_like_analytics:
+                    # Get latest year from database automatically
+                    years_result = db.execute(text("SELECT DISTINCT yy FROM sales_data ORDER BY yy DESC LIMIT 1")).fetchone()
+                    if years_result:
+                        latest_year = years_result[0]
+                        # Auto-append latest year to the query
+                        user_input = f"{user_input} in {latest_year}"
+                        logger.info(f"[AUTO YEAR] Added latest year {latest_year} to query: {user_input}")
+                    
+                    # Don't try to inherit context for simple queries - just proceed
+                else:
+                    # Not an analytics query, proceed normally
+                    user_input = msg.content.strip()
 
         # Generate conversation title if this is the first user message
         message_count = db.query(Message).filter(
@@ -442,8 +490,27 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
 
         # Get conversation history and generate AI response
         history = get_conversation_history(conv_id, db, limit=20)
-        raw_response = get_openai_response(user_input, history)
-        bot_reply = convert_decimals(parse_reply(raw_response))
+        
+        try:
+            raw_response = get_openai_response(user_input, history)
+            bot_reply = convert_decimals(parse_reply(raw_response))
+            
+            # Additional validation to prevent formatting errors
+            if not isinstance(bot_reply, list) or not bot_reply:
+                logger.error(f"[RESPONSE ERROR] Invalid bot_reply format: {type(bot_reply)}")
+                bot_reply = [{
+                    "type": "text",
+                    "template": "I encountered a technical issue. Please try rephrasing your question or contact support.",
+                    "value_code": ""
+                }]
+        
+        except Exception as llm_error:
+            logger.error(f"[LLM ERROR] {llm_error}")
+            bot_reply = [{
+                "type": "text", 
+                "template": "I encountered a technical issue while processing your request. Please try again with a different phrasing.",
+                "value_code": ""
+            }]
         
         # Save bot response
         bot_content = json.dumps(bot_reply)
