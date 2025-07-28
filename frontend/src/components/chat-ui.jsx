@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { API_BASE_URL } from "../config/api.js";
 import "../styles/chat-ui.css";
 import BotMessage from "./bot-message.jsx";
 import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
@@ -41,7 +42,7 @@ export default function ChatUI({ user, onLogout }) {
 
       try {
         console.log("Fetching chats for user..."); // Debug log
-        const res = await fetch("http://localhost:8845/chat/conversations", {
+        const res = await fetch(`${API_BASE_URL}/chat/conversations`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -101,7 +102,7 @@ export default function ChatUI({ user, onLogout }) {
     async function fetchMessages() {
       try {
         const res = await fetch(
-          `http://localhost:8845/chat/conversations/${activeChatId}/messages`,
+          `${API_BASE_URL}/chat/conversations/${activeChatId}/messages`,
           {
             headers: {
               Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
@@ -220,7 +221,7 @@ export default function ChatUI({ user, onLogout }) {
   // Always create a new chat in the backend when New Chat is clicked
   async function handleNewChat() {
     try {
-      const res = await fetch("http://localhost:8845/chat/conversations", {
+      const res = await fetch(`${API_BASE_URL}/chat/conversations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -253,7 +254,7 @@ export default function ChatUI({ user, onLogout }) {
     
     try {
       // Delete from backend first
-      const res = await fetch(`http://localhost:8845/chat/conversations/${chatToDelete}`, {
+      const res = await fetch(`${API_BASE_URL}/chat/conversations/${chatToDelete}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
@@ -324,7 +325,7 @@ export default function ChatUI({ user, onLogout }) {
 
     try {
       const res = await fetch(
-        `http://localhost:8845/chat/conversations/${chatId}/messages`,
+        `${API_BASE_URL}/chat/conversations/${chatId}/messages`,
         {
           headers: { Authorization: `Bearer ${localStorage.getItem("futuretec_token")}` }
         }
@@ -348,7 +349,7 @@ export default function ChatUI({ user, onLogout }) {
   // 🆕 NEW: Auto-create conversation on first message (like ChatGPT)
   async function autoCreateConversation() {
     try {
-      const res = await fetch("http://localhost:8845/chat/conversations", {
+      const res = await fetch(`${API_BASE_URL}/chat/conversations`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -396,11 +397,11 @@ export default function ChatUI({ user, onLogout }) {
     if (!chatId) {
       // No active chat, create one first
       try {
-        const res = await fetch("http://localhost:8845/chat/conversations", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
+              const res = await fetch(`${API_BASE_URL}/chat/conversations`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
           },
           body: JSON.stringify({}),
         });
@@ -432,7 +433,7 @@ export default function ChatUI({ user, onLogout }) {
     setIsTyping(true);
     try {
       const res = await fetch(
-        `http://localhost:8845/chat/conversations/${chatId}/messages`,
+        `${API_BASE_URL}/chat/conversations/${chatId}/messages`,
         {
           method: "POST",
           headers: {
@@ -476,7 +477,7 @@ export default function ChatUI({ user, onLogout }) {
   async function handleLogout() {
     try {
       // Call backend logout endpoint
-      const res = await fetch("http://localhost:8845/auth/logout", {
+      const res = await fetch(`${API_BASE_URL}/auth/logout`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,

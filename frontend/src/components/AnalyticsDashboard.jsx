@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from "../config/api.js";
 import './AnalyticsDashboard.css';
 
 const AnalyticsDashboard = () => {
@@ -52,7 +53,7 @@ const AnalyticsDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:8845/analytics/dashboard?days=${timeRange}`, {
+      const response = await fetch(`${API_BASE_URL}/analytics/dashboard?days=${timeRange}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('futuretec_token')}`
         }

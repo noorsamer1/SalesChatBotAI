@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { API_BASE_URL } from "../config/api.js";
 import "../styles/login.css";
 
 export default function Login({ onLogin }) {
@@ -33,7 +34,7 @@ export default function Login({ onLogin }) {
       : { username, password };
 
     try {
-      const res = await fetch(`http://localhost:8845${endpoint}`, {
+              const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),

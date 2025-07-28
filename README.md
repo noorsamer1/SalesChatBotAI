@@ -200,15 +200,18 @@ python init_db.py
 5. **Start Backend**
 ```bash
 python main.py
-# Backend runs on http://localhost:8845
+# Backend runs on https://194.165.140.77:8502 (Server deployment with SSL)
+# For local development: http://localhost:8845
+# Note: SSL certificate required for HTTPS backend on server
 ```
 
 6. **Frontend Setup**
 ```bash
 cd ../frontend
 npm install
-npm start
-# Frontend runs on http://localhost:3000
+npm run dev
+# Frontend runs on https://194.165.140.77:8501 (Server deployment with SSL)
+# For local development: http://localhost:5173
 ```
 
 ### 🎯 First Query Examples
