@@ -1,0 +1,84 @@
+**🚨 CRITICAL SQL RULES:**
+
+**MANDATORY TABLE USAGE:**
+- **ONLY USE**: `sales_data` table - this is the ONLY table that exists
+- **NEVER USE**: returns_data, customer_data, product_data, brand_data - these tables do not exist
+- **ALL DATA** comes from `sales_data` table including returns, customers, products, brands
+
+**CRITICAL COLUMN MAPPINGS:**
+- **"Channel split/sales channels"** → Use `division_name` (not sales_channel)
+- **"Customer segments"** → Use `division_name` or `customer_type` (not customer_segment)
+- **"Product categories"** → Use `brandname` or `category` (not product_category)
+- **"Returns data"** → Use `tran_type = 'Sales Return'` in sales_data (not returns_data table)
+- **"Date filtering"** → Use `job_date` or `yy/mm` (not return_date)
+
+**EXAMPLE QUERIES:**
+```sql
+-- Channel/Division Analysis (CORRECT)
+SELECT division_name, ROUND(SUM(sales_value), 3) as total_sales 
+FROM sales_data WHERE yy = 2024 
+GROUP BY division_name ORDER BY total_sales DESC
+
+-- Geographic Breakdown (CORRECT)  
+SELECT warehouse_name, ROUND(SUM(sales_value), 3) as total_sales
+FROM sales_data WHERE yy = 2024
+GROUP BY warehouse_name ORDER BY total_sales DESC
+
+-- Customer Returns (CORRECT)
+SELECT customer_name_e, 
+       ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as total_return_value,
+       COUNT(CASE WHEN tran_type = 'Sales Return' THEN 1 END) as return_count
+FROM sales_data WHERE job_date BETWEEN '2024-01-01' AND '2024-10-31'
+GROUP BY customer_name_e ORDER BY total_return_value DESC LIMIT 5
+```
+
+**FIELD NAMING:**
+- Use `value_code` field for all SQL queries in JSON responses
+- ALWAYS use real column names from sales_data table
+- NEVER generate fake data - always query actual database
+
+**RETURNS DATA RULES:**
+- Returns data is in `sales_data` table with `tran_type = 'Sales Return'`
+- Use `job_date` for date filtering, NOT `return_date` (which doesn't exist)
+- For returns: `SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END)`
+
+**SQL SYNTAX RULES:**
+- Use `yy = {year}` for year filtering (more efficient than EXTRACT from job_date)
+- Only use job_date for month/day filtering
+- For growth: Use CASE WHEN with multiple years, NOT LAG window functions
+- NEVER use LAG, LEAD, or complex window functions
+- Always include proper WHERE, GROUP BY, ORDER BY clauses with LIMIT
+
+**DATA TYPE RULES:**
+- NEVER mix string and numeric values in CASE statements
+- Use NULLIF to prevent division by zero
+- Use ABS() for return calculations
+- Use ROUND() for financial values to 3 decimal places
+
+**CRITICAL PATTERNS:**
+```sql
+-- Returns Analysis (CORRECT)
+ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss,
+ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1) as return_rate_pct
+
+-- Growth Calculation (NO LAG)
+ROUND(((SUM(CASE WHEN yy = 2024 THEN sales_value ELSE 0 END) - SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END)) / NULLIF(SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END), 0)) * 100, 1) as growth_pct
+
+-- Profit Margin
+ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct
+```
+
+**EXAMPLE: Top Customers by Returns (CORRECT SQL):**
+```sql
+SELECT customer_name_e, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss 
+FROM sales_data 
+WHERE job_date BETWEEN '2024-01-01' AND '2024-10-31' 
+GROUP BY customer_name_e 
+ORDER BY return_loss DESC 
+LIMIT 5
+```
+
+**DEFAULT BEHAVIOR:**
+- Show NET SALES (sales minus returns) unless specifically asked for gross sales
+- STOP ADDING tran_type = 'Sales' UNLESS EXPLICITLY REQUESTED
+- NEVER RETURN INCOMPLETE RESPONSES 

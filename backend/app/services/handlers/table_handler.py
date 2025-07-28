@@ -3,7 +3,7 @@ from .handlersCommnFunction import *
 def handle_table(response):
     """Enhanced table handler with better formatting and insights"""
     try:
-        sql = response.get("code", "").strip()
+        sql = response.get("value_code", response.get("code", "")).strip()
         title = response.get("title", "Data Table")
         
         if not sql:
@@ -45,7 +45,7 @@ def handle_table(response):
                     elif isinstance(value, (int, float, Decimal)):
                         # Format based on column name
                         col_name = columns[i].lower()
-                        if any(keyword in col_name for keyword in ['sales', 'revenue', 'profit', 'value', 'amount','discount']):
+                        if any(keyword in col_name for keyword in ['sales', 'revenue', 'profit', 'value', 'amount', 'discount', 'loss', 'return']):
                             formatted_row.append(format_currency(value))
                         elif any(keyword in col_name for keyword in ['percent', 'margin', 'rate']):
                             formatted_row.append(f"{float(value):.1f}%")
@@ -73,6 +73,8 @@ def handle_table(response):
             }
         except Exception as e:
             logger.error(f"Table query error: {e}")
+            print(f"[TABLE HANDLER] SQL Error: {e}")
+            print(f"[TABLE HANDLER] Failed SQL: {sql}")
             return {
                 "type": "text",
                 "text": f"⚠️ Database error: {str(e)}"

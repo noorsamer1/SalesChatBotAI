@@ -19,7 +19,7 @@ def execute_query_with_timeout(sql: str, timeout: int = 30) -> tuple[list, list]
 def handle_chart(response):
     try:
         # Extract required fields
-        sql = response.get("code", "").strip()
+        sql = response.get("value_code", response.get("code", "")).strip()
         x_column = response.get("x")
         y_column = response.get("y")
         chart_title = response.get("title", "")

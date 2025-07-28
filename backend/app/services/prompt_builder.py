@@ -8,6 +8,226 @@ import re
 # Allowed chart types for Smart Visualization AI
 ALLOWED_CHART_TYPES = {"bar", "line", "donut", "horizontal_bar", "stacked_bar", "waterfall", "gauge", "multi_line"}
 
+# Modular prompt sections for dynamic injection
+PROMPT_MODULES = {
+    "core_rules": """
+You are FutureTec, the world's most advanced AI sales analytics assistant specialized in Kuwait market retail analytics.
+
+**🚨 CRITICAL RULES - MUST FOLLOW:**
+1. **RESPONSE FORMAT**: Every response MUST be valid JSON array: `[{"type": "text"}, {"type": "table/chart"}]`
+2. **PLACEHOLDER DETECTION**: "Product X" = ask clarification. "SKUs" = analyze all products. NEVER ask about "SKUs"!
+3. **YEAR LOGIC**: No year specified = 2025. "Last year" = 2024. "Promotional campaigns" = 2025.
+4. **GREETING HANDLING**: "hello", "help" = immediate hardcoded JSON response. NO LLM calls.
+5. **BUSINESS CONTEXT**: NEVER return tables without strategic analysis text block.
+6. **TABLE LIMITS**: ALWAYS use LIMIT 10-20 for readability. Charts MUST have limits.
+""",
+    
+    "database_schema": """
+**📊 DATABASE SCHEMA (sales_data table):**
+- **Organizational**: division_name, manager_name, salesman_name_e
+- **Customer**: customer_name_e, customer_name_e_child  
+- **Product**: item_name_e, brandname, item_rec_name
+- **Financial**: sales_value, sales_qty, sales_prof, actual_discount_value
+- **Temporal**: yy (year), mm (month), job_date
+- **Operational**: tran_type ('Sales'/'Sales Return'), warehouse_name, promo ('Y'/N)
+- **Returns**: sr_reason_description, ABS(sales_value) for return amounts
+""",
+    
+    "chart_rules": """
+**🎨 CHART TYPE SELECTION:**
+- **horizontal_bar**: Long names (salespeople, customers, products)
+- **line**: Time series, trends, monthly/yearly data
+- **donut**: Market share, composition, percentages  
+- **stacked_bar**: Breakdowns by category
+- **multi_line**: Multiple metrics over time
+- **waterfall**: Change analysis, growth breakdown
+
+**Chart JSON Format:**
+```json
+{
+  "type": "chart",
+  "title": "Chart Title",
+  "code": "SELECT x_col, y_col FROM...",
+  "x": "x_col",
+  "y": "y_col", 
+  "kind": "chart_type"
+}
+```
+""",
+    
+    "returns_analysis": """
+**🔄 RETURNS DATA RULES:**
+When user mentions "returns" in analysis, MUST include:
+- `return_loss`: `ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3)`
+- `return_rate_pct`: `ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1)`
+
+**Brand Analysis with Returns Template:**
+```sql
+SELECT brandname, total_sales, total_volume, growth_pct, total_profit, profit_margin_pct,
+       ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss,
+       ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1) as return_rate_pct
+FROM sales_data WHERE yy IN (2023, 2024) GROUP BY brandname ORDER BY total_sales DESC LIMIT 10
+```
+""",
+    
+    "few_shot_examples": """
+**🧠 EXAMPLE PATTERNS - MIMIC THESE:**
+
+**Underperforming SKUs:**
+```json
+[
+  {"type": "text", "template": "Analyzing underperforming SKUs for 2025...", "value_code": ""},
+  {"type": "table", "title": "Underperforming SKUs (2025)", "code": "SELECT item_name_e, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data WHERE yy = 2025 GROUP BY item_name_e HAVING SUM(sales_value) < 50000 ORDER BY total_sales ASC LIMIT 20"}
+]
+```
+
+**Top Performers:**
+```json
+[
+  {"type": "text", "template": "Top 10 analysis shows strong performance...", "value_code": ""},
+  {"type": "table", "title": "Top 10 Results", "code": "SELECT entity, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data GROUP BY entity ORDER BY total_sales DESC LIMIT 10"}
+]
+```
+""",
+    
+    "greeting_responses": """
+**GREETING TEMPLATES:**
+```json
+[{"type": "text", "template": "Hello! I'm FutureTec, your AI sales analytics assistant. What would you like to explore today?", "value_code": ""}]
+```
+""",
+    
+    "business_definitions": """
+**📚 BUSINESS METRICS:**
+- **Listing Percentage**: (Items sold from brand / Total items in brand) × 100
+- **Brand Mix**: (Brand sales / Total sales across all brands) × 100  
+- **Return Rate**: (Return Loss / Gross Sales) × 100
+- **Profit Margin**: (Profit / Sales) × 100
+- **Growth Rate**: ((Current - Previous) / Previous) × 100
+"""
+}
+
+def load_prompt_module(module_name: str) -> str:
+    """Load a prompt module from file"""
+    try:
+        module_path = f"prompts/modules/{module_name}.txt"
+        with open(module_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        print(f"[PROMPT MODULE] Warning: {module_name}.txt not found, using fallback")
+        # Fallback to in-memory modules if files don't exist
+        return PROMPT_MODULES.get(module_name, f"# {module_name} module not available")
+
+def get_relevant_prompt_sections(user_input: str, intent_analysis: dict = None, conversation_history: list = None) -> str:
+    """Load relevant sections from modular prompt files based on user intent"""
+    
+    user_lower = user_input.lower()
+    selected_modules = []
+    
+    # CORE MODULES (always included)
+    selected_modules.extend([
+        "core_identity",
+        "mandatory_response_format",
+        "database_schema",  # Always include database schema for SQL generation
+        "sql_rules"         # Always include SQL rules for proper queries
+    ])
+    
+    # CONDITIONAL MODULES based on query analysis
+    
+    # Placeholder detection for queries with generic terms
+    placeholder_indicators = ['product x', 'customer y', 'division a', 'item x']
+    if any(indicator in user_lower for indicator in placeholder_indicators):
+        selected_modules.append("placeholder_detection")
+    
+    # Dashboard/comprehensive analysis (priority trigger)
+    dashboard_keywords = ['dashboard', 'comprehensive', 'overview', 'summary', 'trends']
+    if any(keyword in user_lower for keyword in dashboard_keywords):
+        selected_modules.append("business_intelligence")
+    
+    # Brand/product analysis
+    brand_keywords = ['brand', 'brands', 'performers', 'top', 'product', 'item', 'sku']
+    if any(keyword in user_lower for keyword in brand_keywords):
+        selected_modules.append("business_intelligence")
+    
+    # Channel/division/sales analysis
+    channel_keywords = ['channel', 'division', 'sales', 'split', 'breakdown', 'segment', 'customer']
+    if any(keyword in user_lower for keyword in channel_keywords):
+        selected_modules.append("business_intelligence")
+    
+    # Returns analysis
+    if 'return' in user_lower:
+        selected_modules.append("returns_analysis")
+    
+    # Chart/visualization requests  
+    chart_keywords = ['chart', 'graph', 'visualization', 'show as', 'convert to', 'plot', 'pie', 'donut', 'doughnut', 'bar', 'line']
+    if any(keyword in user_lower for keyword in chart_keywords):
+        selected_modules.append("chart_guidelines")
+    
+    # Year/time analysis
+    time_keywords = ['2024', '2023', '2025', 'year', 'last', 'this', 'quarter', 'month']
+    if any(keyword in user_lower for keyword in time_keywords):
+        selected_modules.append("year_date_logic")
+    
+    # Follow-up/format conversion (enhanced)
+    followup_keywords = ['show as', 'convert to', 'give me', 'format', 'table', 'pie', 'donut', 'chart', 'as a']
+    if any(keyword in user_lower for keyword in followup_keywords):
+        selected_modules.append("follow_up_behaviors")
+    
+    # Business definitions for metrics queries
+    metrics_keywords = ['margin', 'growth', 'performance', 'target', 'listing', 'mix']
+    if any(keyword in user_lower for keyword in metrics_keywords):
+        selected_modules.append("definition_rules")
+    
+    # Response format rules for complex queries
+    complex_keywords = ['performers', 'analysis', 'compare', 'breakdown', 'insights']
+    if any(keyword in user_lower for keyword in complex_keywords):
+        selected_modules.append("response_format_rules")
+    
+    # Remove duplicates while preserving order
+    unique_modules = []
+    for module in selected_modules:
+        if module not in unique_modules:
+            unique_modules.append(module)
+    
+    # Load and combine selected modules
+    combined_sections = []
+    for module_name in unique_modules:
+        try:
+            with open(f"prompts/modules/{module_name}.txt", 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                combined_sections.append(content)
+                print(f"[MODULAR PROMPT] Loaded: {module_name}")
+        except FileNotFoundError:
+            print(f"[MODULAR PROMPT] Warning: {module_name}.txt not found")
+            continue
+    
+    final_prompt = "\n\n".join(combined_sections)
+    
+    # Add recent conversation context if available
+    if conversation_history and len(conversation_history) > 0:
+        try:
+            context_items = []
+            for item in conversation_history[-2:]:  # Only last 2 messages
+                if isinstance(item, dict):
+                    content = item.get('content', str(item))
+                    sender = item.get('sender', 'unknown')
+                    context_items.append(f"{sender}: {content}")
+                elif isinstance(item, str):
+                    context_items.append(item)
+                else:
+                    context_items.append(str(item))
+            if context_items:
+                recent_context = "\n".join(context_items)
+                final_prompt += f"\n\n**RECENT CONTEXT:** {recent_context}"
+        except Exception as e:
+            print(f"[MODULAR PROMPT] Context processing error: {e}")
+            pass
+    
+    print(f"[MODULAR PROMPT] Selected modules: {unique_modules}")
+    print(f"[MODULAR PROMPT] Final prompt size: {len(final_prompt)} chars")
+    
+    return final_prompt
+
 def get_smart_context(user_input: str) -> dict:
     """Generate smart context based on user query patterns"""
     
@@ -334,211 +554,44 @@ def get_real_time_business_alerts(user_input: str) -> dict:
             "primary_chart": None
         }
 
-def build_final_prompt(user_input: str, conversation_history: list = None, base_prompt_path: str = "prompts/system_prompt.txt") -> str:
-    """Build enhanced prompt with smart context and business intelligence"""
+def build_modular_prompt(user_input: str, conversation_history: list = None) -> str:
+    """Build a focused, modular prompt for faster processing"""
     
-    # Load base prompt
-    try:
-        base_prompt = Path(base_prompt_path).read_text(encoding="utf-8")
-    except FileNotFoundError:
-        # Fallback if file not found
-        base_prompt = """You are FutureTec, an advanced AI sales analytics assistant.
-        Database tables: $table_names
-        Sample data: $sample_data
-        
-        Provide JSON responses for sales analytics questions only."""
+    # Get intent analysis for module selection (don't pass conversation_history to avoid dict issues)
+    intent_analysis = get_advanced_intent_analysis(user_input, None)
     
-    # Get smart context
-    context = get_smart_context(user_input)
+    # Load the original system prompt (preserving all content)
+    modular_prompt = get_relevant_prompt_sections(user_input, intent_analysis, conversation_history)
     
-    # Get table schema and sample data
-    try:
-        with engine.connect() as conn:
-            # Get table names
-            result = conn.execute(text("""
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = 'public' AND table_name NOT IN ('users', 'conversations', 'messages')
-            """))
-            tables = [row[0] for row in result.fetchall()]
-            table_names_str = ", ".join(tables)
-            
-            # Get sample data (focus on sales_data)
-            preview_blocks = []
-            for table in tables:
-                if table == 'sales_data':
-                    # Get more comprehensive sample for main table
-                    df = pd.read_sql_query(f"""
-                        SELECT tran_type, customer_name_e, salesman_name_e, brandname, item_name_e, 
-                               sales_value, sales_qty, sales_prof, job_date, division_name
-                        FROM {table} 
-                        WHERE job_date >= CURRENT_DATE - INTERVAL '90 days'
-                        ORDER BY job_date DESC 
-                        LIMIT 5
-                    """, con=engine)
-                else:
-                    df = pd.read_sql_query(f'SELECT * FROM "{table}" LIMIT 3', con=engine)
-                
-                markdown_table = df.to_markdown(index=False)
-                preview_blocks.append(f"**{table.upper()}:**\n{markdown_table}")
-                
-    except Exception as e:
-        print(f"Error building prompt: {e}")
-        table_names_str = "sales_data"
-        preview_blocks = ["Error loading sample data"]
-    
-    preview_str = "\n".join(preview_blocks)
-    
-    # Add conversation history if provided
-    history_context = ""
+    # Add minimal conversation context for follow-ups only - handle different formats safely
     if conversation_history and len(conversation_history) > 0:
-        recent_messages = conversation_history[-5:]  # Last 5 messages for better context
-        history_items = []
-        entity_context = ""
-        
-        # Extract entity context from conversation
-        last_bot_entity = None
-        last_time_filter = None
-        
-        for msg in recent_messages:
-            if msg.get('sender') == 'user':
-                user_query = msg.get('content', '')
-                
-                # Handle different content types safely
-                if isinstance(user_query, list):
-                    user_query = " ".join(str(item) for item in user_query)
-                elif not isinstance(user_query, str):
-                    user_query = str(user_query)
-                
-                history_items.append(f"User Query: {user_query}")
-                
-                # Extract entity type from user query
-                if any(term in user_query.lower() for term in ['salespeople', 'salesman', 'sales team']):
-                    last_bot_entity = "salespeople"
-                elif any(term in user_query.lower() for term in ['customer', 'client']):
-                    last_bot_entity = "customers"
-                elif any(term in user_query.lower() for term in ['product', 'item']):
-                    last_bot_entity = "products"
-                    
-                # Extract time filter
-                if '2024' in user_query:
-                    last_time_filter = "WHERE yy = 2024"
-                elif '2023' in user_query:
-                    last_time_filter = "WHERE yy = 2023"
-                    
-            elif msg.get('sender') == 'bot':
-                bot_response = msg.get('content', '')
-                
-                # Handle different content types safely - CRITICAL FIX
-                if isinstance(bot_response, list):
-                    # Extract text from response blocks
-                    bot_response_text = ""
-                    for block in bot_response:
-                        if isinstance(block, dict):
-                            if block.get('type') == 'text':
-                                bot_response_text += block.get('template', '') + " " + block.get('text', '')
-                            elif 'title' in block:
-                                bot_response_text += block.get('title', '')
-                    bot_response = bot_response_text
-                elif not isinstance(bot_response, str):
-                    bot_response = str(bot_response)
-                
-                # Try to extract entity context from bot response
-                if 'top' in user_input.lower() and 'salespeople' in bot_response.lower():
-                    last_bot_entity = "salespeople"
-                elif 'customer' in bot_response.lower():
-                    last_bot_entity = "customers"
-                    
-                history_items.append(f"Bot Response: {bot_response[:200]}...")
-        
-        if last_bot_entity:
-            entity_context = f"\n🧠 CRITICAL CONVERSATION CONTEXT:\n- Last entity discussed: {last_bot_entity}\n- Time filter: {last_time_filter or 'All years'}\n- For follow-up queries, MAINTAIN this same entity context\n"
-        
-        history_context = f"""
-
-CONVERSATION HISTORY (Last 5 messages):
-{chr(10).join(history_items[-10:])}
-
-{entity_context}
-
-🚨 FOLLOW-UP INTELLIGENCE RULES:
-- If user says "analyze their profit margins" → Apply to SAME entity set from previous query
-- If user says "give me only top 5" → Use SAME entity type but LIMIT 5
-- If user says "add profit analysis" → Add profit metrics to SAME entity context
-- NEVER switch entity types unless explicitly requested
-"""
+        try:
+            context_items = []
+            for item in conversation_history[-2:]:  # Only last 2 messages
+                if isinstance(item, dict):
+                    # Handle dict format (e.g., {"sender": "user", "content": "..."})
+                    content = item.get('content', str(item))
+                    sender = item.get('sender', 'unknown')
+                    context_items.append(f"{sender}: {content}")
+                elif isinstance(item, str):
+                    # Handle string format
+                    context_items.append(item)
+                else:
+                    # Handle other formats
+                    context_items.append(str(item))
+            
+            if context_items:
+                recent_context = "\n".join(context_items)
+                modular_prompt += f"\n\n**RECENT CONTEXT:** {recent_context}"
+        except Exception as e:
+            print(f"[MODULAR PROMPT] Context processing error: {e}")
+            # Skip context if there's an issue
+            pass
     
-    # Get all intelligence features
-    intent_analysis = get_advanced_intent_analysis(user_input, conversation_history)
-    clarification = get_smart_query_clarification(user_input)
-    temporal_context = get_temporal_intelligence(user_input)
-    business_insights = get_proactive_business_insights(user_input, temporal_context)
-    business_alerts = get_real_time_business_alerts(user_input)  # Historical Business Intelligence
-    viz_recommendations = get_smart_visualization_recommendations(user_input, context, business_alerts['primary_chart'])  # NEW: Smart Visualization AI
-
-    # 🔍 DEBUG: Log what the Smart Visualization AI recommended
-    print(f"[SMART VIZ AI] User Input: '{user_input}'")
-    print(f"[SMART VIZ AI] Recommended Chart: '{viz_recommendations['primary_chart']}'")
-    print(f"[SMART VIZ AI] Reasoning: '{viz_recommendations['reasoning']}'")
-    print(f"[SMART VIZ AI] Context: {context}")
-
-    # Build enhanced intelligence context
-    intelligence_context = f"""
-🧠 ADVANCED AI INTELLIGENCE ANALYSIS:
-
-Intent Analysis:
-- Primary Intent: {intent_analysis['primary_intent']}
-- Complexity Level: {intent_analysis['complexity_level']}/4
-- Business Scenario: {intent_analysis['business_scenario']}
-- Requires Comparison: {intent_analysis['requires_comparison']}
-- Requires Drill-down: {intent_analysis['requires_drill_down']}
-
-Temporal Intelligence:
-- Time Scope: {temporal_context['time_scope']}
-- Specific Periods: {', '.join(temporal_context['specific_periods']) if temporal_context['specific_periods'] else 'All time'}
-- Growth Analysis: {temporal_context['growth_analysis']}
-- Seasonal Context: {temporal_context['seasonal_context']}
-
-🎨 SMART VISUALIZATION AI RECOMMENDATIONS:
-- Optimal Chart Type: {viz_recommendations['primary_chart']}
-- Reasoning: {viz_recommendations['reasoning']}
-- Alternative Charts: {', '.join(viz_recommendations['alternative_charts']) if viz_recommendations['alternative_charts'] else 'Standard options'}
-- Data Story: {viz_recommendations['data_story']}
-- Color Psychology: {viz_recommendations['color_psychology']}
-- Business Focus: {viz_recommendations['business_focus']}
-- Interactive Elements: {', '.join(viz_recommendations['interactive_elements']) if viz_recommendations['interactive_elements'] else 'Basic interaction'}
-
-🚨 BUSINESS INTELLIGENCE ALERTS ({business_alerts['alert_count']} active):
-Performance Alerts: {'; '.join(business_alerts['performance_alerts']) if business_alerts['performance_alerts'] else 'None'}
-Quality Alerts: {'; '.join(business_alerts['quality_alerts']) if business_alerts['quality_alerts'] else 'None'}
-Growth Opportunities: {'; '.join(business_alerts['opportunity_alerts']) if business_alerts['opportunity_alerts'] else 'None'}
-Risk Indicators: {'; '.join(business_alerts['risk_indicators']) if business_alerts['risk_indicators'] else 'None'}
-
-Query Clarification:
-- Needs Clarification: {clarification['needs_clarification']}
-- Auto-corrections: {clarification['auto_corrections'] if clarification['auto_corrections'] else 'None'}
-
-Proactive Business Insights:
-- Business Alerts: {'; '.join(business_insights['business_alerts']) if business_insights['business_alerts'] else 'None'}
-- Optimization Suggestions: {'; '.join(business_insights['optimization_suggestions']) if business_insights['optimization_suggestions'] else 'None'}
-
-Smart Follow-up Suggestions:
-{chr(10).join(f"- {suggestion}" for suggestion in intent_analysis['suggested_follow_ups']) if intent_analysis['suggested_follow_ups'] else '- None'}
-
-🎯 RESPONSE STRATEGY:
-Based on this analysis, provide a {intent_analysis['complexity_level']}-level response with:
-1. Strategic business context addressing the {intent_analysis['business_scenario']} scenario
-2. Data analysis matching the {intent_analysis['primary_intent']} intent
-3. {"Comparison analysis" if intent_analysis['requires_comparison'] else "Single-period analysis"}
-4. {"Detailed drill-down capabilities" if intent_analysis['requires_drill_down'] else "High-level overview"}
-5. Proactive suggestions for business optimization
-6. Include relevant business intelligence alerts in the response context
-7. Use the recommended chart type: {viz_recommendations['primary_chart']} for optimal data visualization
-"""
+    print(f"[MODULAR PROMPT] Selected modules for: '{user_input}'")
+    print(f"[MODULAR PROMPT] Prompt size: {len(modular_prompt)} chars")
     
-    filled_prompt = base_prompt.replace("$table_names", table_names_str).replace("$sample_data", preview_str)
-    
-    return filled_prompt + history_context + intelligence_context
+    return modular_prompt
 
 def get_query_complexity_score(user_input: str) -> int:
     """Score query complexity to adjust response depth"""

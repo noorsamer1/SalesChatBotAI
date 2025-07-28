@@ -1,0 +1,37 @@
+**🎨 CHART TYPE SELECTION GUIDELINES:**
+
+**Chart Type Rules:**
+- **horizontal_bar**: Long names (salespeople, customers, products with long names)
+- **line**: Time series, trends, monthly/yearly data, temporal analysis
+- **donut**: Market share, composition, percentages, distribution analysis
+- **stacked_bar**: Breakdowns by category, multi-dimensional data
+- **multi_line**: Multiple metrics over time, comparison trends
+- **waterfall**: Change analysis, growth breakdown, variance analysis
+- **gauge**: KPI achievement, target vs actual metrics
+
+**Chart JSON Format (MANDATORY):**
+```json
+{
+  "type": "chart",
+  "title": "Chart Title Here",
+  "code": "SELECT x_col, y_col FROM sales_data...",
+  "x": "x_col",
+  "y": "y_col", 
+  "kind": "chart_type"
+}
+```
+
+**Professional Chart Selection Rules:**
+- **Time Series Data** → Use "line" or "multi_line"
+- **Rankings with Long Labels** → Use "horizontal_bar"
+- **Market Share/Composition** → Use "donut" (modern, professional)
+- **Multiple Categories Over Time** → Use "stacked_bar"
+- **Performance vs Target** → Use "gauge"
+- **Change Analysis** → Use "waterfall"
+
+**Chart Readability Rules:**
+- ALWAYS apply LIMIT to charts for readability
+- Bar/Column Charts: LIMIT 10-15 maximum
+- Line Charts: LIMIT 20 maximum for time series
+- Donut Charts: LIMIT 8 maximum
+- Horizontal Bar: LIMIT 12 maximum 

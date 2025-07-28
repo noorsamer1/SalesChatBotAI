@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import "../styles/chat-ui.css";
 import BotMessage from "./bot-message.jsx";
+import StreamingMessage from "./StreamingMessage.jsx"; // 🆕 Import streaming component
 import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
 
 function generateChatName(idx) {
@@ -20,6 +21,12 @@ export default function ChatUI({ user, onLogout }) {
   const [isWelcomeMode, setIsWelcomeMode] = useState(true); // 🆕 NEW: Welcome state like ChatGPT
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [chatToDelete, setChatToDelete] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 🆕 Prevent duplicate submissions
+  const [isStreaming, setIsStreaming] = useState(false); // 🆕 Streaming state
+  const [streamingQuery, setStreamingQuery] = useState(""); // 🆕 Current streaming query
+  const [useStreaming, setUseStreaming] = useState(false); // 🆕 DISABLE streaming temporarily
+  const [isMobile, setIsMobile] = useState(false); // 📱 Mobile detection
+  const [sidebarOpen, setSidebarOpen] = useState(false); // 📱 Mobile sidebar state
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -29,6 +36,22 @@ export default function ChatUI({ user, onLogout }) {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+  
+  // 📱 Mobile detection and responsive handling
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      // Auto-close sidebar on desktop
+      if (!mobile) {
+        setSidebarOpen(false);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Initial fetch of chats - make it more robust
   useEffect(() => {
@@ -48,40 +71,29 @@ export default function ChatUI({ user, onLogout }) {
         if (!res.ok) {
           console.error("Failed to fetch chats, status:", res.status);
           if (res.status === 401) {
-            // Token might be invalid, logout
+            console.log("Unauthorized, redirecting to login");
             localStorage.removeItem("futuretec_token");
-            onLogout();
+            window.location.href = "/";
             return;
           }
-          throw new Error("Failed to fetch conversations");
+          throw new Error(`HTTP ${res.status}`);
         }
         
         const data = await res.json();
-        console.log("Fetched conversations:", data.length); // Debug log
+        console.log("Fetched chats:", data.length); // Debug log
+        setChats(data);
         
+        // Only set welcome mode if no chats exist
         if (data.length === 0) {
-          console.log("No conversations found for user");
-          setIsWelcomeMode(true); // 🆕 Stay in welcome mode if no chats
-          setActiveChatId(null);
-          setMessages([]);
-        } else {
-          setChats(data);
-          // 🆕 Don't auto-select first chat - let user choose or stay in welcome mode
-          setIsWelcomeMode(true); 
-          setActiveChatId(null);
-          setMessages([]);
+          setIsWelcomeMode(true);
         }
-        
-      } catch (err) {
-        console.error("Error fetching conversations:", err);
-        setIsWelcomeMode(true); // 🆕 Default to welcome mode on error
-        setActiveChatId(null);
-        setMessages([]);
+      } catch (error) {
+        console.error("Error fetching chats:", error);
       }
     }
     
     fetchChats();
-  }, [onLogout]);
+  }, []);
 
   // Load messages for active chat with proper caching and ordering
   useEffect(() => {
@@ -181,41 +193,7 @@ export default function ChatUI({ user, onLogout }) {
     }
   }, [messages, activeChatId]);
 
-  // Manual refresh chats function for debugging
-//   async function handleRefreshChats() {
-//     const token = localStorage.getItem("futuretec_token");
-//     if (!token) {
-//       alert("No token found");
-//       return;
-//     }
-
-//     try {
-//       console.log("Manually refreshing chats...");
-//       const res = await fetch("http://localhost:8845/chat/conversations", {
-//         headers: { Authorization: `Bearer ${token}` }
-//       });
-      
-//       if (!res.ok) {
-//         console.error("Refresh failed, status:", res.status);
-//         alert(`Refresh failed: ${res.status}`);
-//         return;
-//       }
-      
-//       const data = await res.json();
-//       console.log("Manually fetched chats:", data);
-//       setChats(data);
-      
-//       // Clear message cache
-//       setMessageCache(new Map());
-      
-//       if (data.length > 0) {
-//         setActiveChatId(data[0].id);
-//       }
-//     } catch (err) {
-//       console.error("Error refreshing chats:", err);
-//       alert("Error refreshing chats");
-//     }
-//   }
+ 
 
   // Always create a new chat in the backend when New Chat is clicked
   async function handleNewChat() {
@@ -345,53 +323,94 @@ export default function ChatUI({ user, onLogout }) {
     setLoading(false);
   }
 
-  // 🆕 NEW: Auto-create conversation on first message (like ChatGPT)
-  async function autoCreateConversation() {
-    try {
-      const res = await fetch("http://localhost:8845/chat/conversations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
-        },
-        body: JSON.stringify({}), // Let backend generate the title
-      });
-      
-      if (!res.ok) throw new Error("Failed to create new chat");
-      const data = await res.json();
-      
-      const newChat = { 
-        id: data.id, 
-        title: data.title || "New Chat", 
-        created_at: new Date().toISOString() 
-      };
-      
-      setChats(prevChats => [newChat, ...prevChats]);
-      setActiveChatId(newChat.id);
-      setIsWelcomeMode(false); // 🆕 Exit welcome mode
-      setMessages([]);
-      
-      // Initialize empty cache for new chat
-      setMessageCache(prev => new Map(prev.set(newChat.id, [])));
-      
-      return newChat.id;
-      
-    } catch (err) {
-      console.error("Failed to auto-create conversation", err);
-      throw err;
+  // 🌊 NEW: Streaming message handler
+  async function handleStreamingSend(trimmed) {
+    let chatId = activeChatId;
+    
+    // Create chat if needed
+    if (!chatId) {
+      try {
+        const res = await fetch("http://localhost:8845/chat/conversations", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
+          },
+          body: JSON.stringify({}),
+        });
+        if (!res.ok) throw new Error("Failed to create new chat");
+        const data = await res.json();
+        const newChat = { id: data.id, title: data.title || "New Chat", created_at: new Date().toISOString() };
+        setChats(prevChats => [newChat, ...prevChats]);
+        setActiveChatId(newChat.id);
+        setMessages([]);
+        setIsWelcomeMode(false);
+        chatId = newChat.id;
+      } catch (err) {
+        alert("Error: Could not create a new chat.");
+        setIsSubmitting(false);
+        return;
+      }
+    } else {
+      setIsWelcomeMode(false);
     }
+    
+    // Clear input and add user message
+    setInputValue("");
+    const userMessage = { 
+      id: `user-${Date.now()}`, 
+      sender: "user", 
+      content: trimmed,
+      timestamp: new Date().toISOString()
+    };
+    setMessages((prev) => [...prev, userMessage]);
+    
+    // Start streaming
+    setIsStreaming(true);
+    setStreamingQuery(trimmed);
+    setIsSubmitting(false); // Release lock for streaming
   }
 
-  // Typing indicator simulation
-  const showTypingIndicator = () => {
-    setIsTyping(true);
-    setTimeout(() => setIsTyping(false), 3000);
-  };
+  // Handle streaming completion
+  function handleStreamingComplete(result) {
+    setIsStreaming(false);
+    setStreamingQuery("");
+    
+    // Add bot message to the conversation
+    const botMessage = {
+      id: `bot-${Date.now()}`,
+      sender: "bot",
+      content: result.data || result.text,
+      timestamp: new Date().toISOString()
+    };
+    
+    setMessages((prev) => [...prev, botMessage]);
+  }
+
+  // Handle streaming error
+  function handleStreamingError(error) {
+    setIsStreaming(false);
+    setStreamingQuery("");
+    setIsSubmitting(false);
+    
+    console.error("Streaming error:", error);
+    alert(`Streaming failed: ${error}`);
+  }
 
   // Auto-create a chat if needed before sending a message
   async function handleSend() {
     const trimmed = inputValue.trim();
-    if (!trimmed || loading) return;
+    if (!trimmed || loading || isSubmitting || isStreaming) return; // 🆕 Prevent duplicate submissions
+    
+    // 🆕 Lock submission to prevent duplicates
+    setIsSubmitting(true);
+    
+    // 🌊 NEW: Use streaming if enabled
+    if (useStreaming) {
+      await handleStreamingSend(trimmed);
+      return;
+    }
+    
     let chatId = activeChatId;
     if (!chatId) {
       // No active chat, create one first
@@ -414,6 +433,7 @@ export default function ChatUI({ user, onLogout }) {
         chatId = newChat.id;
       } catch (err) {
         alert("Error: Could not create a new chat.");
+        setIsSubmitting(false); // 🆕 Release lock on error
         return;
       }
     } else {
@@ -466,9 +486,11 @@ export default function ChatUI({ user, onLogout }) {
       }
       setIsTyping(false);
       setLoading(false);
+      setIsSubmitting(false); // 🆕 Release lock on success
     } catch (err) {
       setIsTyping(false);
       setLoading(false);
+      setIsSubmitting(false); // 🆕 Release lock on error
     }
   }
 
@@ -523,7 +545,7 @@ export default function ChatUI({ user, onLogout }) {
 
   // Send on Enter key press
   function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !isSubmitting) { // 🆕 Check submission lock
       e.preventDefault();
       handleSend();
     }
@@ -570,6 +592,15 @@ export default function ChatUI({ user, onLogout }) {
           >
             <span className="btn-icon">📊</span>
             Analytics Dashboard
+          </button>
+          
+          <button 
+            className={`clear-memory ${useStreaming ? 'active' : ''}`} 
+            onClick={() => setUseStreaming(!useStreaming)}
+            title="Toggle streaming mode"
+          >
+            <span className="btn-icon">🌊</span>
+            {useStreaming ? 'Streaming ON' : 'Streaming OFF'}
           </button>
           {/* <button 
             className="clear-memory refresh-btn" 
@@ -706,9 +737,9 @@ export default function ChatUI({ user, onLogout }) {
                   className="send-button"
                   onClick={handleSend}
                   aria-label="Send message"
-                  disabled={loading || !inputValue.trim()}
+                  disabled={loading || isSubmitting || !inputValue.trim()} // 🆕 Include isSubmitting
                 >
-                  {loading ? "⏳" : "🚀"}
+                  {loading || isSubmitting ? "⏳" : "🚀"} {/* 🆕 Show loading for both states */}
                 </button>
               </div>
             </div>
@@ -760,6 +791,21 @@ export default function ChatUI({ user, onLogout }) {
                 </div>
               )}
               
+              {/* 🌊 NEW: Streaming component */}
+              {isStreaming && streamingQuery && activeChatId && (
+                <div className="message bot">
+                  <div className="message-avatar">🤖</div>
+                  <div className="bubble">
+                    <StreamingMessage
+                      query={streamingQuery}
+                      conversationId={activeChatId}
+                      onComplete={handleStreamingComplete}
+                      onError={handleStreamingError}
+                    />
+                  </div>
+                </div>
+              )}
+              
               <div ref={messagesEndRef} />
             </section>
 
@@ -782,9 +828,9 @@ export default function ChatUI({ user, onLogout }) {
                   className="send-button"
                   onClick={handleSend}
                   aria-label="Send message"
-                  disabled={loading || !inputValue.trim()}
+                  disabled={loading || isSubmitting || !inputValue.trim()} // 🆕 Include isSubmitting
                 >
-                  {loading ? "⏳" : "🚀"}
+                  {loading || isSubmitting ? "⏳" : "🚀"} {/* 🆕 Show loading for both states */}
                 </button>
               </div>
             </div>

@@ -1,0 +1,63 @@
+**🎯 RETURN INTELLIGENCE FOR BUSINESS DECISIONS:**
+
+**Key Metrics Definitions:**
+- **Return Loss**: Total monetary value of returned items
+- **Return Rate**: Percentage of sales that are returned  
+- **Return Count**: Number of return transactions
+- **Return Frequency**: Average returns per customer/period
+
+**Business Alert Thresholds:**
+- **High Return Rate**: >15% indicates quality issues
+- **Large Return Loss**: >50K KWD indicates major customer concerns
+- **Frequent Returns**: >100 transactions suggests process problems
+
+**Critical Business Applications:**
+- **Quality Control**: Monitor return rates by product/brand
+- **Customer Relations**: Identify customers with high return volumes
+- **Financial Impact**: Track return losses vs. revenue
+- **Process Improvement**: Analyze return reasons and patterns
+- **Vendor Management**: Assess supplier quality through return data
+
+**Executive Decision Framework:**
+- **Immediate Action**: Return rate >20% requires urgent investigation
+- **Customer Service**: Flag high-return customers for special attention
+- **Product Review**: Items with >10% return rate need quality assessment
+- **Training**: High return locations may need staff development
+
+**📋 MANDATORY BRAND ANALYSIS WITH RETURNS TEMPLATE:**
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive brand performance analysis for 2024 covering all key metrics including sales, volume, profit margins, and returns intelligence. This multi-dimensional analysis provides strategic insights for brand portfolio management and vendor relationships.",
+    "value_code": ""
+  },
+  {
+    "type": "table", 
+    "title": "Top Brands Performance Analysis - 2024",
+    "value_code": "SELECT brandname, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_qty), 0) as total_volume, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss, ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1) as return_rate_pct FROM sales_data WHERE yy = 2024 GROUP BY brandname ORDER BY total_sales DESC LIMIT 10"
+  }
+]
+```
+
+**📋 MANDATORY CUSTOMER RETURNS ANALYSIS TEMPLATE:**
+```json
+[
+  {
+    "type": "text",
+    "template": "Analyzing the top customers by return sales provides insights into customer behavior and product quality issues. Understanding which customers have the highest return losses can help in addressing potential concerns and improving customer satisfaction.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Top 5 Customers by Sales Returns (Jan-Oct 2024)", 
+    "value_code": "SELECT customer_name_e, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as total_return_value, COUNT(CASE WHEN tran_type = 'Sales Return' THEN 1 END) as return_count FROM sales_data WHERE job_date BETWEEN '2024-01-01' AND '2024-10-31' GROUP BY customer_name_e ORDER BY total_return_value DESC LIMIT 5"
+  }
+]
+```
+
+**CRITICAL SQL RULES:**
+- NEVER use LAG() window functions for growth calculations
+- ALWAYS use CASE WHEN for returns: `CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END`
+- Include both return value AND return count for customer analysis
+- Use proper date filtering with job_date, not fictional return_date column 

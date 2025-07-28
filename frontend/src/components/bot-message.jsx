@@ -35,6 +35,22 @@ export default function BotMessage({ data }) {
                                 <ChartMessage data={block} />
                             </div>
                         );
+                    case 'smart_suggestions':
+                        return (
+                            <div key={index} style={{ marginBottom: '10px' }}>
+                                <div className="smart-suggestions">
+                                    <div className="suggestions-header">
+                                        <span className="suggestions-icon">💡</span>
+                                        <span className="suggestions-title">SMART SUGGESTIONS:</span>
+                                    </div>
+                                    <ul className="suggestions-list">
+                                        {block.suggestions.map((suggestion, i) => (
+                                            <li key={i} className="suggestion-item">{suggestion}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        );
                     default:
                         return (
                             <div key={index} style={{ marginBottom: '10px' }}>

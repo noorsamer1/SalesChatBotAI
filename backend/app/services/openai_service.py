@@ -4,7 +4,8 @@ import time
 import re
 from openai import OpenAI
 from app.core.config import settings
-from app.services.prompt_builder import build_final_prompt, get_query_complexity_score
+from app.services.prompt_builder import build_modular_prompt, get_query_complexity_score
+from app.services.mcp_tools import mcp_registry  # 🔧 Import MCP tools
 from functools import wraps
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
@@ -201,8 +202,8 @@ def validate_response_structure(response_data) -> tuple[bool, str]:
     
     required_fields = {
         "text": ["template"],
-        "table": ["title", "code"],
-        "chart": ["title", "code", "x", "y", "kind"]
+        "table": ["title"],  # Will check for value_code OR code separately
+        "chart": ["title", "x", "y", "kind"]  # Will check for value_code OR code separately
     }
     
     for i, item in enumerate(response_data):
@@ -216,9 +217,15 @@ def validate_response_structure(response_data) -> tuple[bool, str]:
         if item_type not in required_fields:
             return False, f"Item {i} has unsupported type: {item_type}"
         
+        # Check required fields
         missing_fields = [field for field in required_fields[item_type] if field not in item]
         if missing_fields:
             return False, f"Item {i} missing required fields: {missing_fields}"
+        
+        # Special validation for table/chart SQL field
+        if item_type in ["table", "chart"]:
+            if "value_code" not in item and "code" not in item:
+                return False, f"Item {i} missing SQL field ('value_code' or 'code')"
     
     return True, "Valid"
 
@@ -252,6 +259,129 @@ def enhance_sql_query(sql_query: str) -> str:
     return sql_query
 
 @retry_on_failure(max_retries=3, delay=1)
+def get_openai_response_fast(user_input: str, conversation_history: list = None):
+    """Fast OpenAI API call with optimized prompting and MCP tool integration"""
+    
+    # Type safety fix
+    if isinstance(user_input, list):
+        user_input = " ".join(str(item) for item in user_input)
+    elif not isinstance(user_input, str):
+        user_input = str(user_input)
+    
+    print(f"[FAST MODE] Processing query: {user_input[:100]}...")
+    
+    try:
+        # 🔧 Analyze intent for MCP tools
+        intent = analyze_query_intent(user_input)
+        print(f"[FAST MODE] Intent analysis: {intent}")
+        
+        # 🔧 Execute MCP tools if needed (async wrapper for sync function)
+        mcp_results = None
+        if intent.get("mcp_tools"):
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                mcp_results = loop.run_until_complete(execute_mcp_tools_if_needed(user_input, intent))
+            except RuntimeError:
+                # Create new event loop if none exists
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                mcp_results = loop.run_until_complete(execute_mcp_tools_if_needed(user_input, intent))
+            except Exception as e:
+                print(f"[MCP] Error executing tools: {e}")
+                mcp_results = None
+        
+        # Build enhanced system prompt with MCP context
+        enhanced_system = build_modular_prompt(user_input, conversation_history)
+        
+        # Add MCP results to prompt if available
+        if mcp_results:
+            mcp_context = "\n\n🔧 ADVANCED ANALYTICS RESULTS:\n"
+            for tool_name, result in mcp_results.items():
+                mcp_context += f"\n**{tool_name.upper()}:**\n{json.dumps(result, indent=2)}\n"
+            mcp_context += "\nIncorporate these advanced analytics insights into your response. Highlight key predictions and recommendations."
+            enhanced_system += mcp_context
+        
+        # Dynamic parameters based on query complexity
+        complexity_score = get_query_complexity_score(user_input)
+        print(f"[FAST MODE] Complexity score: {complexity_score}")
+        
+        # Use gpt-4o-mini to avoid rate limits
+        model = "gpt-4o-mini"
+        
+        print(f"[MODULAR PROMPT] Selected modules for: '{user_input}'")
+        print(f"[MODULAR PROMPT] Prompt size: {len(enhanced_system)} chars")
+        print(f"[FAST MODE] Using {model} with modular prompt ({len(enhanced_system)} chars)")
+        
+        if mcp_results:
+            print(f"[FAST MODE] Enhanced with MCP results from: {list(mcp_results.keys())}")
+        
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": enhanced_system},
+                {"role": "user", "content": user_input}
+            ],
+            timeout=45,
+            temperature=0.2,
+            max_tokens=2500,
+            top_p=0.95,
+            frequency_penalty=0.1,
+            presence_penalty=0.1
+        )
+        
+        content = response.choices[0].message.content.strip()
+        print(f"[LLM RAW OUTPUT] {content}")
+        
+        # Parse and validate response
+        from app.services.improved_json_parser import parse_openai_response
+        parsed_response = parse_openai_response(content)
+        print(f"[FAST MODE] Parsed response: {parsed_response}")
+        
+        # 🔧 Enhanced SQL processing for both "code" and "value_code"
+        for item in parsed_response:
+            sql_field = None
+            if item.get("type") in ["table", "chart"]:
+                if "value_code" in item:
+                    sql_field = "value_code"
+                elif "code" in item:
+                    # Convert "code" to "value_code" for consistency
+                    item["value_code"] = item.pop("code")
+                    sql_field = "value_code"
+            
+            if sql_field:
+                original_sql = item[sql_field]
+                print(f"[FAST MODE SQL] {original_sql}")
+                
+                # Handle LAG replacement if needed
+                if "LAG(" in original_sql.upper():
+                    simple_sql = original_sql.replace(
+                        "ROUND(((SUM(sales_value) - LAG(SUM(sales_value)) OVER (ORDER BY brandname)) / NULLIF(LAG(SUM(sales_value)) OVER (ORDER BY brandname), 0)) * 100, 1) as growth_pct",
+                        "ROUND(((SUM(CASE WHEN yy = 2024 THEN sales_value ELSE 0 END) - SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END)) / NULLIF(SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END), 0)) * 100, 1) as growth_pct"
+                    )
+                    if "WHERE yy = 2024" in simple_sql and "WHERE yy IN (2023, 2024)" not in simple_sql:
+                        simple_sql = simple_sql.replace("WHERE yy = 2024", "WHERE yy IN (2023, 2024)")
+                    item[sql_field] = simple_sql
+                
+                # Enhanced SQL with context
+                enhanced_sql = enhance_sql_query(original_sql)
+                item[sql_field] = enhanced_sql
+                print(f"[FAST MODE ENHANCED SQL] {enhanced_sql}")
+        
+        # Validate response structure
+        is_valid, error_msg = validate_response_structure(parsed_response)
+        print(f"[FAST MODE] Validation result: {is_valid}, error: {error_msg}")
+        
+        if not is_valid:
+            print(f"[FAST MODE] Validation failed: {error_msg}")
+        
+        return {"response": parsed_response}
+        
+    except Exception as e:
+        print(f"[openai_service] Error in get_openai_response_fast: {e}")
+        return {"response": [{"type": "text", "template": f"Error processing request: {str(e)}", "value_code": ""}]}
+
+@retry_on_failure(max_retries=3, delay=1)
 def get_openai_response(user_input: str, conversation_history: list = None) -> dict:
     """Enhanced OpenAI response with smart handling and validation"""
     try:
@@ -265,7 +395,7 @@ def get_openai_response(user_input: str, conversation_history: list = None) -> d
         complexity = get_query_complexity_score(user_input)
         
         # Build enhanced prompt with context
-        system_prompt = build_final_prompt(user_input, conversation_history)
+        system_prompt = build_modular_prompt(user_input, conversation_history)
         
         # Add enhanced SQL guidelines to system prompt
         enhanced_sql_rules = """
@@ -322,7 +452,7 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
         
         # Make API call with enhanced parameters
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": enhanced_system},
                 {"role": "user", "content": user_input}
@@ -359,14 +489,24 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
                     "value_code": ""
                 }]
             
-            # Enhance SQL queries in the response
+            # Enhance SQL queries in the response and fix field names
             for item in parsed_response:
-                if item.get("type") in ["table", "chart"] and "code" in item:
-                    original_sql = item["code"]
+                # Check for both "code" and "value_code" to handle LLM inconsistency
+                sql_field = None
+                if item.get("type") in ["table", "chart"]:
+                    if "value_code" in item:
+                        sql_field = "value_code"
+                    elif "code" in item:
+                        # Convert "code" to "value_code" for consistency
+                        item["value_code"] = item.pop("code")
+                        sql_field = "value_code"
+                
+                if sql_field:
+                    original_sql = item[sql_field]
                     print(f"[LLM GENERATED SQL] {original_sql}")
                     try:
-                        item["code"] = enhance_sql_query(original_sql)
-                        print(f"[ENHANCED SQL] {item['code']}")
+                        item[sql_field] = enhance_sql_query(original_sql)
+                        print(f"[ENHANCED SQL] {item[sql_field]}")
                     except ValueError as e:
                         print(f"[openai_service] SQL validation error: {e}")
                         return [{
@@ -375,14 +515,14 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
                             "value_code": ""
                         }]
             
-            return parsed_response
+            return {"response": parsed_response}
             
         except Exception as e:
             print(f"[LLM JSON ERROR] {e}")
-            # Try to auto-fix
-            cleaned = clean_json_response(content)
+            # Try to auto-fix using improved parser
+            from .improved_json_parser import parse_openai_response as improved_parser
             try:
-                parsed_response = parse_openai_response(cleaned)
+                parsed_response = improved_parser(content)
                 is_valid, error_msg = validate_response_structure(parsed_response)
                 if not is_valid:
                     print(f"[openai_service] Validation error after auto-fix: {error_msg}")
@@ -391,7 +531,7 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
                         "template": "Sorry, I had trouble formatting my answer. Please try rephrasing your question.",
                         "value_code": ""
                     }]
-                return parsed_response
+                return {"response": parsed_response}
             except Exception as e2:
                 print(f"[LLM JSON AUTO-FIX FAILED] {e2}")
                 return [{
@@ -419,7 +559,7 @@ async def get_openai_response_stream(user_input: str, conversation_history: list
     
     try:
         # Build the enhanced system prompt
-        enhanced_system = build_final_prompt(user_input, conversation_history)
+        enhanced_system = build_modular_prompt(user_input, conversation_history)
         
         # Dynamic parameters based on query complexity
         complexity = get_query_complexity_score(user_input)
@@ -476,6 +616,148 @@ Response should be: {'detailed with multiple blocks' if complexity > 3 else 'foc
             "content": f"Error generating response: {str(e)}"
         }
 
+async def get_openai_response_stream_enhanced(user_input: str, conversation_history: list = None):
+    """🌊 Enhanced streaming that provides token-by-token AND structured data streaming"""
+    
+    # Type safety fix
+    if isinstance(user_input, list):
+        user_input = " ".join(str(item) for item in user_input)
+    elif not isinstance(user_input, str):
+        user_input = str(user_input)
+    
+    try:
+        # Build the enhanced system prompt using modular approach
+        enhanced_system = build_modular_prompt(user_input, conversation_history)
+        
+        # Dynamic parameters based on query complexity
+        complexity = get_query_complexity_score(user_input)
+        temperature = min(0.2 + (complexity * 0.1), 0.7)
+        max_tokens = min(2000 + (complexity * 500), 4000)
+        
+        print(f"[ENHANCED STREAMING] Starting for query: {user_input[:50]}...")
+        print(f"[ENHANCED STREAMING] Model: gpt-4o-mini, Complexity: {complexity}")
+        
+        # 🌊 Make STREAMING API call
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": enhanced_system},
+                {"role": "user", "content": user_input}
+            ],
+            timeout=45,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=0.95,
+            frequency_penalty=0.1,
+            presence_penalty=0.1,
+            stream=True  # 🌊 Enable streaming
+        )
+        
+        # 🎬 Start streaming with status
+        yield {
+            "type": "stream_start",
+            "status": "AI is thinking...",
+            "complexity": complexity
+        }
+        
+        # 🌊 Yield individual tokens as they arrive
+        accumulated_content = ""
+        for chunk in response:
+            if chunk.choices[0].delta.content is not None:
+                token = chunk.choices[0].delta.content
+                accumulated_content += token
+                yield {
+                    "type": "text_token",
+                    "token": token,
+                    "accumulated": accumulated_content
+                }
+        
+        # 🎯 Parse accumulated content for structured data
+        yield {
+            "type": "parsing_start", 
+            "status": "Processing data structures..."
+        }
+        
+        try:
+            # Parse and validate the complete response
+            from app.services.improved_json_parser import parse_openai_response
+            parsed_response = parse_openai_response(accumulated_content)
+            
+            # 🎯 Stream structured data progressively
+            for i, item in enumerate(parsed_response):
+                if item.get("type") == "text":
+                    yield {
+                        "type": "text_complete",
+                        "content": item.get("template", ""),
+                        "index": i
+                    }
+                    
+                elif item.get("type") in ["table", "chart"]:
+                    # 🔧 Handle SQL execution and streaming
+                    sql_field = "value_code" if "value_code" in item else "code" if "code" in item else None
+                    if sql_field and item[sql_field]:
+                        yield {
+                            "type": "sql_start",
+                            "title": item.get("title", "Data Analysis"),
+                            "data_type": item["type"],
+                            "index": i
+                        }
+                        
+                        # Execute SQL and stream results
+                        try:
+                            from app.services.handlers.table_handler import handle_table_response
+                            from app.services.handlers.chart_handler import handle_chart_response
+                            
+                            if item["type"] == "table":
+                                result = handle_table_response(item)
+                                yield {
+                                    "type": "table_data", 
+                                    "data": result,
+                                    "index": i
+                                }
+                            elif item["type"] == "chart":
+                                result = handle_chart_response(item)
+                                yield {
+                                    "type": "chart_data",
+                                    "data": result, 
+                                    "index": i
+                                }
+                                
+                        except Exception as sql_error:
+                            yield {
+                                "type": "sql_error",
+                                "error": str(sql_error),
+                                "index": i
+                            }
+                    else:
+                        yield {
+                            "type": "data_error",
+                            "error": "Missing SQL query",
+                            "index": i
+                        }
+        
+        except Exception as parse_error:
+            print(f"[ENHANCED STREAMING] Parse error: {parse_error}")
+            yield {
+                "type": "parse_error",
+                "error": f"Error parsing response: {str(parse_error)}",
+                "raw_content": accumulated_content
+            }
+        
+        # 🏁 Signal completion
+        yield {
+            "type": "stream_complete",
+            "final_content": accumulated_content,
+            "status": "Analysis complete!"
+        }
+        
+    except Exception as e:
+        print(f"[ENHANCED STREAMING] Error: {e}")
+        yield {
+            "type": "stream_error",
+            "error": f"Streaming error: {str(e)}"
+        }
+
 def analyze_query_intent(user_input: str) -> dict:
     """Analyze user query to provide better responses"""
     
@@ -491,7 +773,8 @@ def analyze_query_intent(user_input: str) -> dict:
         "time_period": None,
         "metrics": [],
         "requires_chart": False,
-        "requires_table": False
+        "requires_table": False,
+        "mcp_tools": []  # 🔧 Add MCP tool detection
     }
     
     # Detect entity types
@@ -518,4 +801,103 @@ def analyze_query_intent(user_input: str) -> dict:
     intent["requires_chart"] = any(keyword in user_input.lower() for keyword in chart_keywords)
     intent["requires_table"] = any(keyword in user_input.lower() for keyword in table_keywords)
     
+    # 🔧 MCP Tool Detection
+    mcp_keywords = {
+        "sales_forecasting": ["forecast", "predict", "future", "projection", "estimate", "what will", "next month", "next quarter"],
+        "trend_analysis": ["trend", "pattern", "direction", "growing", "declining", "seasonal", "cycle"],
+        "customer_behavior": ["customer behavior", "segment", "churn", "retention", "lifetime value", "rfm"],
+        "inventory_prediction": ["inventory", "stock", "reorder", "demand", "supply", "shortage"],
+        "market_segmentation": ["market segment", "clustering", "target market", "demographics"]
+    }
+    
+    user_lower = user_input.lower()
+    for tool_name, keywords in mcp_keywords.items():
+        if any(keyword in user_lower for keyword in keywords):
+            intent["mcp_tools"].append(tool_name)
+    
     return intent
+
+async def execute_mcp_tools_if_needed(user_input: str, intent: dict) -> dict:
+    """Execute MCP tools if the query requires advanced analytics"""
+    
+    if not intent.get("mcp_tools"):
+        return None
+    
+    print(f"[MCP] Detected tools needed: {intent['mcp_tools']}")
+    
+    mcp_results = {}
+    
+    for tool_name in intent["mcp_tools"]:
+        try:
+            # Extract parameters from user input
+            params = extract_mcp_parameters(user_input, tool_name)
+            print(f"[MCP] Executing {tool_name} with params: {params}")
+            
+            # Execute the tool
+            result = await mcp_registry.execute_tool(tool_name, params)
+            mcp_results[tool_name] = result
+            
+            print(f"[MCP] {tool_name} completed successfully")
+            
+        except Exception as e:
+            print(f"[MCP] Error executing {tool_name}: {e}")
+            mcp_results[tool_name] = {
+                "type": "mcp_error",
+                "tool": tool_name,
+                "error": str(e)
+            }
+    
+    return mcp_results
+
+def extract_mcp_parameters(user_input: str, tool_name: str) -> dict:
+    """Extract parameters for MCP tools from user input"""
+    
+    user_lower = user_input.lower()
+    params = {}
+    
+    if tool_name == "sales_forecasting":
+        # Extract timeframe
+        if "1 month" in user_lower or "next month" in user_lower:
+            params["timeframe"] = "1_month"
+        elif "3 month" in user_lower or "quarter" in user_lower:
+            params["timeframe"] = "3_months"
+        elif "6 month" in user_lower:
+            params["timeframe"] = "6_months"
+        elif "year" in user_lower or "12 month" in user_lower:
+            params["timeframe"] = "1_year"
+        else:
+            params["timeframe"] = "3_months"  # default
+        
+        # Extract entity (brand, customer, etc.)
+        if "mccain" in user_lower:
+            params["entity"] = "McCain"
+        elif "alpro" in user_lower:
+            params["entity"] = "Alpro"
+        elif "total" in user_lower or "overall" in user_lower:
+            params["entity"] = "total"
+        else:
+            params["entity"] = "total"  # default
+    
+    elif tool_name == "trend_analysis":
+        params["metric"] = "sales_value"
+        params["period"] = "monthly"
+    
+    elif tool_name == "customer_behavior":
+        params["analysis_type"] = "rfm"
+        if "churn" in user_lower:
+            params["analysis_type"] = "churn"
+        elif "segment" in user_lower:
+            params["analysis_type"] = "segmentation"
+    
+    elif tool_name == "inventory_prediction":
+        params["product"] = "all"
+        # Extract specific product if mentioned
+        if "mccain" in user_lower:
+            params["product"] = "McCain"
+    
+    elif tool_name == "market_segmentation":
+        params["criteria"] = "geographic"
+        if "demographic" in user_lower:
+            params["criteria"] = "demographic"
+    
+    return params
