@@ -1,0 +1,171 @@
+**🏢 BUSINESS CONTEXT - KUWAIT FOOD DISTRIBUTION**
+
+**MARKET OVERVIEW:**
+- **Business Model**: B2B Food & Beverage Distribution in Kuwait
+- **Key Sectors**: HORECA (Hotels/Restaurants), Cooperatives, Key Accounts, Traditional Trade
+- **Product Portfolio**: International food brands (McCain, Alpro, Quest) + Local brands
+- **Geographic Coverage**: Kuwait nationwide through 9 distribution centers
+
+**📍 WAREHOUSE/BRANCH MAPPING (Use for stakeholder-friendly names):**
+- **WH1** → "Main Distribution Center"
+- **WH2** → "Central Kuwait Branch"  
+- **WH4** → "Kuwait City Branch"
+- **KPC-MAIN** → "KPC Main Warehouse"
+- **CTE** → "Central Trade Exchange"
+- **BUR** → "Burgan Branch"
+- **SRWH** → "South Region Warehouse"
+- **GRVWH** → "Greater Region Warehouse"
+- **W5N** → "West 5N Branch"
+
+**🚨 BRANCH QUERIES - STAKEHOLDER-FRIENDLY FORMAT:**
+For any branch/warehouse analysis, use this SQL pattern:
+```sql
+-- Use CASE statement to show meaningful branch names
+SELECT 
+  CASE 
+    WHEN warehouse_name = 'WH1' THEN 'Main Distribution Center'
+    WHEN warehouse_name = 'WH2' THEN 'Central Kuwait Branch'
+    WHEN warehouse_name = 'WH4' THEN 'Kuwait City Branch'
+    WHEN warehouse_name = 'KPC-MAIN' THEN 'KPC Main Warehouse'
+    WHEN warehouse_name = 'CTE' THEN 'Central Trade Exchange'
+    WHEN warehouse_name = 'BUR' THEN 'Burgan Branch'
+    WHEN warehouse_name = 'SRWH' THEN 'South Region Warehouse'
+    WHEN warehouse_name = 'GRVWH' THEN 'Greater Region Warehouse'
+    WHEN warehouse_name = 'W5N' THEN 'West 5N Branch'
+    ELSE warehouse_name
+  END as branch_name,
+  ROUND(SUM(sales_value), 3) as total_sales
+FROM sales_data 
+WHERE [CONDITIONS]
+GROUP BY warehouse_name 
+ORDER BY total_sales DESC
+```
+
+**📊 KEY BUSINESS DIVISIONS:**
+1. **HORECA** (35% of business) - Hotels, Restaurants, Cafes
+2. **COOPS** (30%) - Cooperative societies (major retail channel in Kuwait)  
+3. **KEY ACCOUNTS** (20%) - Major corporate/retail clients
+4. **TRADITIONAL-TRADE** (10%) - Independent retailers
+5. **PASTRY-BAKERY** (4%) - Specialized bakery channel
+6. **OTHERS/OTH-DIFF** (1%) - Miscellaneous channels
+
+**💰 FINANCIAL STRUCTURE:**
+- **Average Transaction**: ~26 KWD (Non-promo), ~36 KWD (Promotional)
+- **Profit Margins**: 16.6% (Regular), 27.4% (Promotional)
+- **Promotional Strategy**: 8.9% of transactions, higher value/margin
+- **Returns Rate**: 19% of transactions (high due to food perishability)
+- **FOC Strategy**: 4.4% - Free samples and promotional giveaways
+
+**🎯 ADVANCED ANALYTICS PATTERNS:**
+
+**Performance Rankings:**
+- Always include growth rates when comparing periods
+- Show both volume (qty) and value (sales_value) metrics
+- Include profit margins for business decision-making
+- Rank by total sales unless specified otherwise
+
+**Multi-Group Query Patterns:**
+```sql
+-- Division Performance with Profitability
+SELECT division_name, 
+       ROUND(SUM(sales_value), 3) as total_sales,
+       ROUND(SUM(sales_prof), 3) as total_profit,
+       ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct,
+       COUNT(DISTINCT customer_name_e) as unique_customers
+FROM sales_data 
+WHERE yy = 2025 
+GROUP BY division_name 
+ORDER BY total_sales DESC
+```
+
+**Table Sizing Rules:**
+- Top 10 for products/customers (unless specified)
+- Top 5 for high-level summaries (divisions, warehouses)
+- Top 20+ for detailed operational queries
+- Always show percentage contribution when relevant
+
+**🚨 COMPREHENSIVE SALES DASHBOARD TEMPLATE:**
+
+**🎯 SMART YEAR SELECTION RULES:**
+- **No year specified** → Use 2025 (latest data)
+- **"All years" explicitly requested** → Use 2025 only (UI performance)
+- **Specific year mentioned** → Use that year
+- **NEVER use multi-year queries** for dashboard (causes UI crashes)
+
+When user requests "comprehensive sales dashboard" or similar, use this EXACT template with CURRENT YEAR (2025):
+
+```json
+[
+  {
+    "type": "text",
+    "template": "This comprehensive sales dashboard provides insights into monthly sales trends, highlights top-performing products, and evaluates the performance of different divisions. The analysis covers data from 2025 (our latest complete dataset), allowing us to identify patterns, anomalies, and opportunities for growth. Key insights include seasonal trends, product performance, and division contributions to overall sales.",
+    "value_code": ""
+  },
+  {
+    "type": "chart",
+    "title": "Monthly Sales Trends (2025)",
+    "value_code": "SELECT mm as month, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data WHERE yy = 2025 GROUP BY mm ORDER BY mm",
+    "x": "month",
+    "y": "total_sales", 
+    "kind": "line"
+  },
+  {
+    "type": "table",
+    "title": "Top 10 Products by Sales Performance (2025)",
+    "value_code": "SELECT item_name_e as product_name, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, COUNT(*) as transactions FROM sales_data WHERE yy = 2025 GROUP BY item_name_e ORDER BY total_sales DESC LIMIT 10"
+  },
+  {
+    "type": "table", 
+    "title": "Division Performance Analysis (2025)",
+    "value_code": "SELECT division_name, ROUND(SUM(sales_value), 3) as net_sales, ROUND(SUM(sales_prof), 3) as total_profit, COUNT(DISTINCT customer_name_e) as customers_served, COUNT(*) as transactions FROM sales_data WHERE yy = 2025 GROUP BY division_name ORDER BY net_sales DESC"
+  }
+]
+```
+
+**🚨 CRITICAL DASHBOARD RULES:**
+1. **ALWAYS use single year** (2025) for dashboard queries to prevent UI crashes
+2. **UI Performance**: Monthly charts with 12 points max (not 36+ points from all years)
+3. **Data Relevance**: Latest year (2025) is most relevant for business decisions
+4. **User Intent**: "Comprehensive" means complete analysis of current period, not historical overload
+
+**📊 ALTERNATIVE YEAR QUERIES:**
+- If user specifically wants historical comparison: "Compare 2025 vs 2024 performance"
+- If user wants trend analysis: "Show yearly sales trends from 2023 to 2025"
+- Default dashboard = Current year performance snapshot
+
+**🚨 CRITICAL: Use this EXACT template for comprehensive dashboard requests to ensure all 3 components (trends chart + products table + divisions table) are included.**
+
+**🔍 BUSINESS INTELLIGENCE INSIGHTS:**
+
+**Smart Suggestions Framework:**
+- Suggest customer segment analysis after division performance
+- Recommend promotional impact analysis after overall trends  
+- Propose year-over-year comparisons for strategic planning
+- Offer geographic/territory analysis for expansion insights
+
+**🚨 FIELD VALUES (Critical for SQL accuracy):**
+- **promo**: 'Y' (promotional), 'N' (regular) - NOT 'Promo'/'Non-Promo'
+- **tran_type**: 'Sales', 'Sales Return', 'FOC'
+- **division_name**: Use exact values from database
+- **warehouse_name**: WH1, WH2, WH3, WH4, KPC-MAIN, CTE, BUR, SRWH, GRVWH, W5N
+
+**PROMOTIONAL CAMPAIGNS ANALYSIS TEMPLATE:**
+```sql
+SELECT 
+  CASE WHEN promo = 'Y' THEN 'Promotional' ELSE 'Non-Promotional' END AS promo_status,
+  COUNT(*) as transactions,
+  ROUND(SUM(sales_value), 3) as total_sales,
+  ROUND(AVG(sales_value), 2) as avg_transaction_value,
+  ROUND(SUM(sales_prof), 3) as total_profit,
+  ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct
+FROM sales_data 
+WHERE yy = 2025
+GROUP BY promo
+ORDER BY total_sales DESC
+```
+
+**CRITICAL:**
+- ALWAYS use promo = 'Y' and promo = 'N' (not tran_type = 'Promo')
+- Include avg_transaction_value for promotional analysis  
+- Use 2025 as default year for promotional campaigns unless specified
+- Show both absolute values and percentages for business insights 

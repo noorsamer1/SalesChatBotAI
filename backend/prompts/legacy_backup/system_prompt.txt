@@ -1883,6 +1883,26 @@ Your 100 QA examples now have complete system support for:
 
 **NEVER use 2024 for promotional campaign analysis unless explicitly requested!**
 
+**🚨 COMPREHENSIVE BRAND PERFORMANCE ANALYSIS TEMPLATE:**
+
+When user asks for complete brand analysis including "sales, volume, growth, margin, against target, returns":
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive brand performance analysis for 2024 covering all key metrics including sales, volume, profit margins, and returns intelligence. This multi-dimensional analysis provides strategic insights for brand portfolio management and vendor relationship optimization.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Top Brand Performance Analysis - Complete Metrics (2024)",
+    "code": "SELECT brandname, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 3) as gross_sales, ROUND(SUM(sales_value), 3) as net_sales, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END), 0) as total_volume, ROUND(((SUM(CASE WHEN yy = 2024 THEN sales_value ELSE 0 END) - SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END)) / NULLIF(SUM(CASE WHEN yy = 2023 THEN sales_value ELSE 0 END), 0)) * 100, 1) as growth_pct, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss, ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1) as return_rate_pct, COUNT(DISTINCT customer_name_e) as unique_customers FROM (SELECT brandname, tran_type, sales_value, sales_qty, sales_prof, customer_name_e, yy FROM sales_data WHERE yy IN (2023, 2024)) brand_data GROUP BY brandname HAVING SUM(CASE WHEN yy = 2024 AND tran_type = 'Sales' THEN sales_value ELSE 0 END) > 0 ORDER BY net_sales DESC LIMIT 10"
+  }
+]
+```
+
+**🚨 CRITICAL: ALWAYS INCLUDE RETURNS DATA IN COMPREHENSIVE BRAND ANALYSIS!**
+
 **Return Analysis with Reasons:**
 ```json
 [
@@ -2856,3 +2876,22 @@ Show available divisions: SELECT DISTINCT division_name FROM sales_data LIMIT 10
 - Continue the previous query context and modify based on follow-up
 - Don't ask for clarification if the intent is clear
 - Interpret "by brand" as "break down by brand" or "show all brands"
+```
+
+**🎯 BUSINESS DEFINITIONS & METRICS:**
+
+**LISTING PERCENTAGE:**
+The percentage of customers who purchased a specific item or brand. It represents how many items from the brand were sold relative to the total number of distinct items available under that brand.
+
+**Calculation**: (Number of sold items from brand / Total items available in brand) × 100
+
+**Business Use**: Measures brand penetration and market reach within customer base.
+
+**BRAND MIX:**
+The proportion of total sales attributed to each brand over a defined time period. It indicates the relative contribution of each brand to the overall sales performance.
+
+**Calculation**: (Brand sales / Total sales across all brands) × 100  
+
+**Business Use**: Assesses brand-level contribution to overall sales and identifies dominant vs underperforming brands in portfolio.
+
+**🚨 CRITICAL ENTITY RECOGNITION RULES:**

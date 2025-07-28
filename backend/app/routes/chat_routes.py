@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from app.core.db import get_db
 from app.services.deps import get_current_user
 from app.models.models import Conversation, Message, User
-from app.services.openai_service import get_openai_response, get_openai_response_stream, enhance_sql_query, validate_response_structure
+from app.services.openai_service import get_openai_response, get_openai_response_fast, get_openai_response_stream, get_openai_response_stream_enhanced, enhance_sql_query, validate_response_structure
 from app.services.response_parser import parse_reply
 from app.services.analytics_service import AnalyticsService
 import json
@@ -443,7 +443,7 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
                         # Check if previous message had table/chart data
                         if isinstance(prev_content, list):
                             for block in prev_content:
-                                if isinstance(block, dict) and block.get("type") in ["table", "chart"] and "code" in block:
+                                if isinstance(block, dict) and block.get("type") in ["table", "chart"] and ("value_code" in block or "code" in block):
                                     # Found previous data - construct conversion request with context
                                     chart_type = "line chart" if "line" in user_input_lower else "bar chart" if "bar" in user_input_lower else "chart"
                                     
@@ -533,8 +533,13 @@ def send_message(conv_id: int, msg: MessageCreate, db: Session = Depends(get_db)
         history = get_conversation_history(conv_id, db, limit=20)
         
         try:
-            raw_response = get_openai_response(user_input, history)
-            bot_reply = convert_decimals(parse_reply(raw_response))
+            raw_response = get_openai_response_fast(user_input, history)
+            # Extract the response array from the fast response structure
+            if isinstance(raw_response, dict) and "response" in raw_response:
+                response_data = raw_response["response"]
+            else:
+                response_data = raw_response
+            bot_reply = convert_decimals(parse_reply(response_data))
             
             # Additional validation to prevent formatting errors
             if not isinstance(bot_reply, list) or not bot_reply:
@@ -678,24 +683,47 @@ async def send_message_stream(
             # 🤖 Generate AI response with streaming
             yield f"data: {json.dumps({'type': 'status', 'message': 'Generating insights...'})}\n\n"
             
-            # 🌊 NEW: Stream text chunks as they arrive from OpenAI
+            # 🌊 NEW: Enhanced streaming with structured data
             accumulated_content = ""
             final_content = ""
             
-            async for chunk in get_openai_response_stream(content, history):
-                if chunk["type"] == "text_chunk":
-                    # Stream individual text chunks
-                    yield f"data: {json.dumps({'type': 'text_chunk', 'chunk': chunk['content'], 'accumulated': chunk['accumulated']})}\n\n"
-                    accumulated_content = chunk["accumulated"]
-                    await asyncio.sleep(0.05)  # Small delay for readable streaming
+            async for chunk in get_openai_response_stream_enhanced(content, history):
+                chunk_type = chunk.get("type")
                 
-                elif chunk["type"] == "stream_complete":
+                if chunk_type == "stream_start":
+                    yield f"data: {json.dumps({'type': 'stream_start', 'status': chunk['status'], 'complexity': chunk.get('complexity', 1)})}\n\n"
+                
+                elif chunk_type == "text_token":
+                    # Stream individual tokens as they arrive
+                    yield f"data: {json.dumps({'type': 'text_token', 'token': chunk['token'], 'accumulated': chunk['accumulated']})}\n\n"
+                    accumulated_content = chunk["accumulated"]
+                    await asyncio.sleep(0.02)  # Smooth streaming
+                
+                elif chunk_type == "parsing_start":
+                    yield f"data: {json.dumps({'type': 'parsing_start', 'status': chunk['status']})}\n\n"
+                
+                elif chunk_type == "text_complete":
+                    yield f"data: {json.dumps({'type': 'text_complete', 'content': chunk['content'], 'index': chunk['index']})}\n\n"
+                
+                elif chunk_type == "sql_start":
+                    yield f"data: {json.dumps({'type': 'sql_start', 'title': chunk['title'], 'data_type': chunk['data_type'], 'index': chunk['index']})}\n\n"
+                
+                elif chunk_type == "table_data":
+                    yield f"data: {json.dumps({'type': 'table_data', 'data': chunk['data'], 'index': chunk['index']})}\n\n"
+                
+                elif chunk_type == "chart_data":
+                    yield f"data: {json.dumps({'type': 'chart_data', 'data': chunk['data'], 'index': chunk['index']})}\n\n"
+                
+                elif chunk_type == "sql_error":
+                    yield f"data: {json.dumps({'type': 'sql_error', 'error': chunk['error'], 'index': chunk['index']})}\n\n"
+                
+                elif chunk_type == "stream_complete":
                     final_content = chunk["final_content"]
-                    yield f"data: {json.dumps({'type': 'text_complete', 'final_text': final_content})}\n\n"
+                    yield f"data: {json.dumps({'type': 'stream_complete', 'status': chunk['status']})}\n\n"
                     break
                 
-                elif chunk["type"] == "error":
-                    yield f"data: {json.dumps({'type': 'error', 'message': chunk['content']})}\n\n"
+                elif chunk_type == "stream_error":
+                    yield f"data: {json.dumps({'type': 'stream_error', 'error': chunk['error']})}\n\n"
                     return
             
             # 📝 Parse the final response into structured blocks
@@ -717,20 +745,23 @@ async def send_message_stream(
                 else:
                     # 🔧 Enhance SQL queries like regular endpoint
                     for item in parsed_json:
-                        if item.get("type") in ["table", "chart"] and "code" in item:
-                            original_sql = item["code"]
-                            logger.info(f"[LLM GENERATED SQL] {original_sql}")
-                            try:
-                                item["code"] = enhance_sql_query(original_sql)
-                                logger.info(f"[ENHANCED SQL] {item['code']}")
-                            except ValueError as e:
-                                logger.error(f"SQL validation error: {e}")
-                                clean_reply = [{
-                                    "type": "text",
-                                    "template": "I generated an unsafe SQL query. Please try again with a different approach.",
-                                    "value_code": ""
-                                }]
-                                break
+                        if item.get("type") in ["table", "chart"]:
+                            # Handle both "code" and "value_code" fields
+                            sql_field = "value_code" if "value_code" in item else "code" if "code" in item else None
+                            if sql_field:
+                                original_sql = item[sql_field]
+                                logger.info(f"[LLM GENERATED SQL] {original_sql}")
+                                try:
+                                    item[sql_field] = enhance_sql_query(original_sql)
+                                    logger.info(f"[ENHANCED SQL] {item[sql_field]}")
+                                except ValueError as e:
+                                    logger.error(f"SQL validation error: {e}")
+                                    clean_reply = [{
+                                        "type": "text",
+                                        "template": "I generated an unsafe SQL query. Please try again with a different approach.",
+                                        "value_code": ""
+                                    }]
+                                    break
                     else:
                         # All SQL queries were valid, proceed with parsing
                         bot_reply = parse_reply(parsed_json)

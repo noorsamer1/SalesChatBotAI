@@ -1,73 +1,53 @@
-from app.services.handlers.text_handler import handle_text
 from app.services.handlers.table_handler import handle_table
 from app.services.handlers.chart_handler import handle_chart
-import json
+from app.services.handlers.text_handler import handle_text
 
-# Dispatch Dictionary
-handlers = {
-    "text": handle_text,
-    "chart": handle_chart,
-    "table": handle_table,
-    # Add more types as needed
-}
-
-def parse_reply(response):
+def parse_reply(reply_data):
     """
-    Parses the LLM JSON response (single or multi-part) and routes each block to the correct handler.
-
-    Args:
-        response (str): The raw JSON string returned by the LLM.
-
-    Returns:
-        list: A list of processed backend-ready output blocks (text, table, chart, etc.).
+    Parse the reply data and convert it into the format expected by the frontend.
     """
-    multi_parse = response
-    results = []
-
-    # === Fallback: If response is None, empty, or not a dict/list, return error block ===
-    if not multi_parse or not isinstance(multi_parse, (dict, list)):
-        return [{
-            "type": "text",
-            "text": "Sorry, I could not answer your question. Please check your request or try rephrasing.",
-            "value_code": ""
-        }]
-
-    # Multi-block (list) response
-    if isinstance(multi_parse, list):
-        for block in multi_parse:
-            response_type = block.get("type")
-            handler = handlers.get(response_type)
-            if handler:
-                results.append(handler(block))
-            else:
-                # Fallback for unsupported type
-                results.append({
-                    "type": "text",
-                    "template": "Sorry, your request could not be processed (unsupported response type).",
-                    "text": "Sorry, your request could not be processed (unsupported response type).",
-                    "value_code": ""
+    if not isinstance(reply_data, list):
+        return {"error": "Invalid reply format"}
+    
+    result = []
+    
+    for i, block in enumerate(reply_data):
+        response_type = block.get("type", "unknown")
+        print(f"[RESPONSE PARSER] Block {i}: type='{response_type}', block={block}")
+        
+        try:
+            if response_type == "text":
+                handler = handle_text
+            elif response_type == "table":
+                handler = handle_table
+            elif response_type == "chart":
+                handler = handle_chart
+            elif response_type == "smart_suggestions":
+                # Handle smart suggestions directly
+                print(f"[RESPONSE PARSER] Processing smart suggestions: {block.get('suggestions', [])}")
+                result.append({
+                    "type": "smart_suggestions",
+                    "suggestions": block.get("suggestions", [])
                 })
-    else:
-        # Single-block (dict) response
-        response_type = multi_parse.get("type")
-        handler = handlers.get(response_type)
-        if handler:
-            results.append(handler(multi_parse))
-        else:
-            # Fallback for unsupported type
-            results.append({
-                "type": "text",
-                "template": "Sorry, your request could not be processed (unsupported response type).",
-                "text": "Sorry, your request could not be processed (unsupported response type).",
-                "value_code": ""
+                continue
+            else:
+                print(f"[RESPONSE PARSER] No handler found for type '{response_type}'")
+                result.append({
+                    "type": "error",
+                    "content": f"Unsupported response type: {response_type}"
+                })
+                continue
+            
+            print(f"[RESPONSE PARSER] Found handler for type '{response_type}'")
+            processed_block = handler(block)
+            result.append(processed_block)
+            
+        except Exception as e:
+            print(f"[RESPONSE PARSER] Error processing block {i}: {e}")
+            result.append({
+                "type": "error",
+                "content": f"Error processing {response_type} block: {str(e)}"
             })
-
-    # Extra fallback if results is still empty
-    if not results:
-        results.append({
-            "type": "text",
-            "text": "Sorry, I could not answer your question. Please check your request or try rephrasing.",
-            "value_code": ""
-        })
-    return results
+    
+    return result
 

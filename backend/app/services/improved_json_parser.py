@@ -156,15 +156,25 @@ def validate_and_fix_structure(parsed: Any) -> Union[List[Dict], Dict]:
             # Ensure required fields exist
             if "title" not in item:
                 item["title"] = "Data Table"
-            if "code" not in item:
-                raise ValueError(f"Table item {i} missing 'code' field")
+            # Handle both "code" and "value_code" fields
+            if "value_code" not in item and "code" not in item:
+                raise ValueError(f"Table item {i} missing 'value_code' or 'code' field")
+            elif "code" in item and "value_code" not in item:
+                # Convert "code" to "value_code" for consistency
+                print(f"[JSON PARSER] Converting 'code' to 'value_code' for table item {i}")
+                item["value_code"] = item.pop("code")
                 
         elif item_type == "chart":
             # Ensure required fields exist
             if "title" not in item:
                 item["title"] = "Chart"
-            if "code" not in item:
-                raise ValueError(f"Chart item {i} missing 'code' field")
+            # Handle both "code" and "value_code" fields  
+            if "value_code" not in item and "code" not in item:
+                raise ValueError(f"Chart item {i} missing 'value_code' or 'code' field")
+            elif "code" in item and "value_code" not in item:
+                # Convert "code" to "value_code" for consistency
+                print(f"[JSON PARSER] Converting 'code' to 'value_code' for chart item {i}")
+                item["value_code"] = item.pop("code")
             if "x" not in item:
                 raise ValueError(f"Chart item {i} missing 'x' field")
             if "y" not in item:
@@ -223,105 +233,52 @@ def extract_valid_json_parts(content: str) -> List[Dict]:
 # Update the main OpenAI service to use the improved parser
 def parse_openai_response(content: str) -> List[Dict]:
     """
-    Main function to parse OpenAI responses with robust error handling
+    Enhanced parser for OpenAI responses with smart suggestions extraction
     """
-    if not content or not content.strip():
-        return [{
-            "type": "text",
-            "template": "No response received. Please try again.",
-            "value_code": ""
-        }]
     
-    # 🚨 SPECIAL HANDLER: Check for shelf life queries that might return 0 results
-    content_lower = content.lower()
-    if "shelf life" in content_lower and ("outside" in content_lower or "expired" in content_lower):
-        # Parse first to check if we have valid JSON
-        try:
-            parsed = smart_json_parser(content)
-            if isinstance(parsed, list):
-                # Check if this will likely return 0 results (looking for negative shelf life)
-                for item in parsed:
-                    if item.get("type") in ["table", "chart"] and "code" in item:
-                        sql_code = item["code"].lower()
-                        if "shelf_life < 0" in sql_code or "shelf_life <= 0" in sql_code:
-                            print("[JSON PARSER] Detected shelf life query with negative criteria, adding fallback")
-                            # Modify the SQL to be more realistic
-                            new_sql = item["code"].replace("shelf_life < 0", "shelf_life < 30").replace("shelf_life <= 0", "shelf_life <= 30")
-                            item["code"] = new_sql
-                            # Also update the description
-                            for text_item in parsed:
-                                if text_item.get("type") == "text":
-                                    template = text_item.get("template", "")
-                                    if "outside their normal shelf life range" in template:
-                                        text_item["template"] = template.replace(
-                                            "sold outside their normal shelf life range",
-                                            "sold with short shelf life (≤30 days remaining)"
-                                        ) + " Note: We found no expired items (good news!), so showing items with short remaining shelf life instead."
-                            return parsed
-        except:
-            pass
-    
-    # 🚨 SPECIAL HANDLER: Check for underperforming SKUs incomplete response
-    if "underperforming" in content_lower and "sku" in content_lower:
-        # Check if content has SQL code or if it's just text without data
-        has_sql = any(word in content_lower for word in ["select", "from", "where", "group by"])
+    # First extract smart suggestions if they exist
+    smart_suggestions = []
+    suggestions_pattern = r'\*\*Smart Suggestions:\*\*\s*\n((?:- .+\n?)+)'
+    suggestions_match = re.search(suggestions_pattern, content, re.MULTILINE)
+    if suggestions_match:
+        suggestions_text = suggestions_match.group(1)
+        # Extract individual suggestions
+        for line in suggestions_text.split('\n'):
+            line = line.strip()
+            if line.startswith('- '):
+                smart_suggestions.append(line[2:])  # Remove '- ' prefix
         
-        # Parse first to see if we only have text blocks
-        try:
-            parsed = smart_json_parser(content)
-            if isinstance(parsed, list) and len(parsed) == 1:
-                if parsed[0].get("type") == "text" and not has_sql:
-                    print("[JSON PARSER] Detected incomplete underperforming SKUs response (text-only), adding SQL")
-                    return [{
-                        "type": "text",
-                        "template": parsed[0].get("template", "Analyzing underperforming SKUs for 2025..."),
-                        "value_code": ""
-                    }, {
-                        "type": "table",
-                        "title": "Underperforming SKUs - Low Value & Margin (2025)",
-                        "code": "SELECT item_name_e, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct FROM sales_data WHERE yy = 2025 GROUP BY item_name_e HAVING SUM(sales_value) < 50000 AND AVG(sales_prof/NULLIF(sales_value,0)*100) < 15 ORDER BY total_sales ASC LIMIT 20"
-                    }]
-        except:
-            pass
-        
-        # Fallback for raw text without JSON
-        if not any(word in content_lower for word in ["table", "chart", "code", "select"]):
-            print("[JSON PARSER] Detected incomplete underperforming SKUs response (raw text), adding SQL")
-            return [{
-                "type": "text",
-                "template": content if content else "Analyzing underperforming SKUs for 2025...",
-                "value_code": ""
-            }, {
-                "type": "table",
-                "title": "Underperforming SKUs - Low Value & Margin (2025)",
-                "code": "SELECT item_name_e, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct FROM sales_data WHERE yy = 2025 GROUP BY item_name_e HAVING SUM(sales_value) < 50000 AND AVG(sales_prof/NULLIF(sales_value,0)*100) < 15 ORDER BY total_sales ASC LIMIT 20"
-            }]
+        # Remove smart suggestions from content for JSON parsing
+        content = re.sub(suggestions_pattern, '', content)
     
-    # First check if this looks like a refusal response (before trying JSON parsing)
-    if any(phrase in content_lower for phrase in [
-        "sorry, i can only answer", 
-        "i specialize in sales analytics",
-        "not about sales", 
-        "sales-related question",
-        "cannot process this request",
-        "only answer questions about sales",
-        "sales and sales analytics"
-    ]):
-        return [{
-            "type": "text",
-            "template": "Sorry, I can only answer questions about sales and sales analytics. Please ask a sales-related question.",
-            "value_code": ""
-        }]
-    
+    # Parse the main JSON response
     try:
-        parsed = smart_json_parser(content)
-        return parsed
-    except Exception as e:
-        print(f"[json_parser] Error parsing response: {e}")
-        print(f"[json_parser] Raw content: {content}")
+        # Use existing smart JSON parser
+        response_data = smart_json_parser(content)
         
+        # Ensure it's a list
+        if not isinstance(response_data, list):
+            response_data = [response_data] if response_data else []
+        
+        # Add smart suggestions as a separate block if they exist
+        if smart_suggestions:
+            response_data.append({
+                "type": "smart_suggestions",
+                "suggestions": smart_suggestions
+            })
+        
+        # Validate and fix structure
+        response_data = validate_and_fix_structure(response_data)
+        
+        return response_data
+        
+    except Exception as e:
+        print(f"[JSON PARSER] Error parsing response: {e}")
+        print(f"[JSON PARSER] Content: {content[:500]}...")
+        
+        # Fallback for plain text responses
         return [{
             "type": "text",
-            "template": f"Response parsing error. Please try a different question.",
+            "template": content.strip(),
             "value_code": ""
         }]

@@ -1,0 +1,123 @@
+**🗃️ COMPLETE DATABASE SCHEMA - SALES_DATA TABLE**
+
+**📊 BUSINESS CONTEXT:**
+- **Data Period**: 2023-01-01 to 2025-05-18 (Current data through May 2025)
+- **Total Records**: 3.5+ million transactions
+- **Business Type**: B2B Food & Beverage Distribution in Kuwait
+- **Transaction Types**: Sales (81%) + Sales Returns (19%)
+- **Promotional Mix**: 8.9% promotional, 91.1% regular pricing
+
+**🗂️ COMPLETE COLUMN REFERENCE:**
+
+**TRANSACTION IDENTIFIERS:**
+- `id` (integer, primary key) - Unique transaction ID
+- `tran_type` (varchar) - "Sales" or "Sales Return"
+- `job_date` (date) - Actual transaction date (2023-01-01 to 2025-05-18)
+- `job_no` (varchar) - Job/invoice number
+- `promo` (varchar) - "Y" = Promotional, "N" = Regular pricing
+
+**TIME DIMENSIONS:**
+- `yy` (integer) - Year (2023, 2024, 2025)
+- `mm` (integer) - Month (1-12)
+
+**ORGANIZATIONAL HIERARCHY:**
+- `division_code` (integer) - Division identifier
+- `division_name` (varchar) - Business divisions:
+  * "HORECA" - Hotels, Restaurants, Cafes
+  * "COOPS" - Cooperative societies  
+  * "KEY ACCOUNTS" - Major corporate clients
+  * "TRADITIONAL-TRADE" - Traditional retail
+  * "PASTRY-BAKERY" - Bakery channel
+  * "OTH-DIFF" - Other/Miscellaneous
+  * "OTHERS" - Additional categories
+
+**SALES TEAM STRUCTURE:**
+- `manager_code` (varchar) - Sales manager ID
+- `manager_name` (varchar) - Sales manager name
+- `su_code` (varchar) - Sales supervisor ID  
+- `su_name` (varchar) - Sales supervisor name
+- `salesman_code` (varchar) - Salesperson ID
+- `salesman_name_e` (varchar) - Salesperson name (English)
+
+**CUSTOMER INFORMATION:**
+- `customer_code` (varchar) - Primary customer ID
+- `customer_name_e` (varchar) - Customer name (English)
+- `customer_code_child` (varchar) - Sub-customer/branch ID
+- `customer_name_e_child` (varchar) - Sub-customer name
+- `child_channel` (varchar) - Customer sub-channel type
+
+**PRODUCT DETAILS:**
+- `brandname` (varchar) - Product brand (McCain, Alpro, Quest, etc.)
+- `item_code` (varchar) - Product SKU code
+- `item_name_e` (varchar) - Product name (English)
+- `item_rec_code` (varchar) - Recipe/variant code
+- `item_rec_name` (varchar) - Recipe/variant name
+
+**LOGISTICS & FULFILLMENT:**
+- `warehouse_name` (varchar) - Distribution center:
+  * "WH1", "WH2", "WH4" - Main warehouses
+  * "KPC-MAIN" - Main KPC warehouse
+  * "CTE", "BUR", "SRWH", "GRVWH", "W5N" - Regional centers
+- `comp_code` (varchar) - Company code
+- `branch` (varchar) - Branch location
+- `sub_branch` (varchar) - Sub-branch location
+- `div_type` (varchar) - "KPC1" or "KPC2" - Division classification
+
+**FINANCIAL METRICS:**
+- `sales_value` (numeric) - Revenue amount in KWD
+- `sales_qty` (numeric) - Quantity sold
+- `sales_prof` (numeric) - Profit amount in KWD  
+- `foc_value` (numeric) - Free of Charge value (promotional giveaways)
+
+**RETURNS PROCESSING:**
+- `sr_reason_description` (varchar) - Sales return reason
+
+**🚨 CRITICAL BUSINESS RULES:**
+
+**PROMOTIONAL ANALYSIS:**
+- Use `promo = 'Y'` for promotional items
+- Use `promo = 'N'` for regular pricing
+- FOC (Free of Charge) represents promotional giveaways (4.4% of records)
+
+**RETURNS ANALYSIS:**
+- Use `tran_type = 'Sales Return'` for return transactions
+- Returns represent 19% of all transactions
+- Return values are typically negative
+- Use `sr_reason_description` for return categorization
+
+**PROFITABILITY CALCULATIONS:**
+- Profit Margin % = `(sales_prof / sales_value) * 100`
+- Only calculate on positive sales_value
+- Handle division by zero with NULLIF
+
+**GEOGRAPHIC ANALYSIS:**
+- Primary: `division_name` (business channel)
+- Secondary: `warehouse_name` (distribution hub)
+- Tertiary: `branch` + `sub_branch` (location details)
+
+**🏭 WAREHOUSE/BRANCH MAPPINGS (Use stakeholder-friendly names):**
+- `warehouse_name = 'WH1'` → "Main Distribution Center"
+- `warehouse_name = 'WH2'` → "Central Kuwait Branch"  
+- `warehouse_name = 'WH4'` → "Kuwait City Branch"
+- `warehouse_name = 'KPC-MAIN'` → "KPC Main Warehouse"
+- `warehouse_name = 'CTE'` → "Central Trade Exchange"
+- `warehouse_name = 'BUR'` → "Burgan Branch"
+- `warehouse_name = 'SRWH'` → "South Region Warehouse"
+- `warehouse_name = 'GRVWH'` → "Greater Region Warehouse"
+- `warehouse_name = 'W5N'` → "West 5N Branch"
+
+**🚨 CRITICAL: For stakeholder reports, always use CASE statements to convert warehouse codes to meaningful names**
+
+**DATE FILTERING:**
+- Current data available through 2025-05-18
+- Use `yy = 2025` for current year analysis
+- Use `job_date` for precise date ranges
+- Default to latest available year (2025) when not specified
+
+**NEVER USE THESE NON-EXISTENT COLUMNS:**
+- ❌ sales_channel (use division_name)
+- ❌ product_category (use brandname)  
+- ❌ customer_segment (use division_name)
+- ❌ return_date (use job_date)
+- ❌ discount_pct (use promo field)
+- ❌ region (use warehouse_name/branch) 
