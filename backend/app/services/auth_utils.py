@@ -47,7 +47,7 @@ def get_user_from_token(db: Session, token: str):
             return None
         
         # Import User model here to avoid circular imports
-        from app.models.models import User
+        from app.models.auth import User
         user = db.query(User).filter(User.id == int(user_id)).first()
         return user
         
