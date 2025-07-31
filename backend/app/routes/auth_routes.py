@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr
 from app.core.db import get_db
 from app.models.auth import User
 from app.services.auth_utils import hash_password, verify_password, create_access_token
-from app.services.deps import get_current_user
+from backend.app.services.auth_deps import get_current_user
 
 router = APIRouter()
 

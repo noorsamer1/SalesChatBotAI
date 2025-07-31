@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.services.analytics_service import AnalyticsService
-from app.services.deps import get_current_user
+from backend.app.services.auth_deps import get_current_user
 
 analytics_routes = APIRouter(prefix="/analytics", tags=["Analytics"])
 analytics_service = AnalyticsService()
