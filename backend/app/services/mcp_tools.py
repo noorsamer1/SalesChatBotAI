@@ -2,14 +2,10 @@
 🔧 MCP (Model-Controlled Prediction) Tools Implementation
 Provides advanced analytics and forecasting capabilities for the sales chatbot.
 """
-import asyncio
 import numpy as np
-import pandas as pd
 from datetime import datetime, timedelta
-from typing import Dict, List, Any
+from typing import Dict, List
 import logging
-from app.core.db import get_db
-from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
