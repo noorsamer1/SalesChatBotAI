@@ -1,9 +1,5 @@
-####
-####            OI, THIS NEEDS UPDATE
-####
-
 from fastapi import APIRouter, HTTPException
-from app.models.question import Question
+from app.schemas.question import Question
 from app.services.openai_service import get_openai_response
 from app.services.response_parser import parse_reply
 

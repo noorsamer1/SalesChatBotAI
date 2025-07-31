@@ -2,7 +2,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.db import get_db
-from app.models.models import User  # Adjust path to your User model
+from app.models.auth import User  # Adjust path to your User model
 from app.services.auth_utils import decode_access_token  # Adjust as needed
 
 bearer_scheme = HTTPBearer()

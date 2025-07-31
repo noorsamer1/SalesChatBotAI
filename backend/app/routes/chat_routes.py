@@ -1,16 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.db import get_db
 from app.services.deps import get_current_user
-from app.models.models import Conversation, Message, User
-from app.services.openai_service import get_openai_response, get_openai_response_fast, get_openai_response_stream, get_openai_response_stream_enhanced, enhance_sql_query, validate_response_structure
+from app.models.chat import Conversation, Message
+from app.services.openai_service import get_openai_response_fast, get_openai_response_stream_enhanced, enhance_sql_query, validate_response_structure
 from app.services.response_parser import parse_reply
 from app.services.analytics_service import AnalyticsService
 import json
-from app.services.table_utils import auto_pivot_llm_table, add_year_totals
-from decimal import Decimal
 import logging
 import datetime
 import time
@@ -19,7 +17,6 @@ from typing import AsyncGenerator
 from app.services.auth_utils import get_user_from_token
 import re
 from app.services.improved_json_parser import convert_decimals, parse_openai_response
-from sqlalchemy import text
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
