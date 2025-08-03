@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..core.db import get_db
-from ..services.analytics_service import AnalyticsService
-from ..services.deps import get_current_user
+from app.core.db import get_db
+from app.services.analytics_service import AnalyticsService
+from app.services.auth_deps import get_current_user
 
 analytics_routes = APIRouter(prefix="/analytics", tags=["Analytics"])
 analytics_service = AnalyticsService()
@@ -33,7 +33,7 @@ async def get_query_patterns(
     """Get popular query patterns by category"""
     try:
         from sqlalchemy import desc
-        from ..models.models import PopularInsights
+        from app.models.analytics import PopularInsights
         
         query = db.query(PopularInsights)
         
@@ -67,7 +67,7 @@ async def get_query_categories(
     """Get all query categories with usage statistics"""
     try:
         from sqlalchemy import desc
-        from ..models.models import QueryCategories
+        from app.models.analytics import QueryCategories
         
         categories = db.query(QueryCategories).order_by(desc(QueryCategories.query_count)).all()
         
@@ -121,7 +121,7 @@ async def get_query_suggestions(
     """Get intelligent query suggestions based on patterns and user history"""
     try:
         from sqlalchemy import desc, func
-        from ..models.models import PopularInsights, UserAnalytics
+        from app.models.analytics import PopularInsights, UserAnalytics
         
         suggestions = []
         

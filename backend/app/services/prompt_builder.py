@@ -1,13 +1,12 @@
 from app.core.db import engine
 from sqlalchemy import text
-import pandas as pd
-from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 import re
 
 # Allowed chart types for Smart Visualization AI
 ALLOWED_CHART_TYPES = {"bar", "line", "donut", "horizontal_bar", "stacked_bar", "waterfall", "gauge", "multi_line"}
 
+# region Backup Prompt Modules
 # Modular prompt sections for dynamic injection
 PROMPT_MODULES = {
     "core_rules": """
@@ -106,6 +105,7 @@ FROM sales_data WHERE yy IN (2023, 2024) GROUP BY brandname ORDER BY total_sales
 - **Growth Rate**: ((Current - Previous) / Previous) × 100
 """
 }
+# endregion
 
 def load_prompt_module(module_name: str) -> str:
     """Load a prompt module from file"""
