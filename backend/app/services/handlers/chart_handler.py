@@ -214,22 +214,163 @@ def handle_chart(response):
                     "text": "⚠️ No valid data columns found for multi-series chart."
                 }
             
-            result = {
-                "type": "chart", 
-                "title": chart_title,
-                "chart_data": {
-                    "labels": labels,
-                    "values": series_data,  # Dictionary of series_name: values
-                    "y": y_columns,  # Array of column names
-                    "x_axis": x_column,
-                    "y_axis": "Multiple Metrics",
-                    "multi_series": True
-                },
-                "kind": chart_kind
-            }
+            # For multi_line charts, we need to restructure data for proper legends
+            if chart_kind == "multi_line":
+                # Group data by division (assuming division is in the data)
+                division_data = {}
+                division_names = []
+                
+                # Check if we have division data in the results
+                division_col = None
+                for col in columns:
+                    if 'division' in col.lower():
+                        division_col = col
+                        break
+                
+                if division_col:
+                    div_index = normalized_cols.index(division_col.lower())
+                    for row in rows:
+                        division = str(row[div_index]) if row[div_index] else "Unknown"
+                        if division not in division_data:
+                            division_data[division] = []
+                            division_names.append(division)
+                        
+                        # Get the sales value for this division/month
+                        sales_index = normalized_cols.index('total_sales')
+                        sales_value = float(row[sales_index]) if row[sales_index] is not None else 0
+                        division_data[division].append(sales_value)
+                    
+                    # Restructure for frontend
+                    result = {
+                        "type": "chart", 
+                        "title": chart_title,
+                        "chart_data": {
+                            "labels": labels,
+                            "values": division_data,  # Dictionary of division_name: values
+                            "y": division_names,  # Array of division names for legend
+                            "x_axis": x_column,
+                            "y_axis": "Total Sales (value)",
+                            "multi_series": True
+                        },
+                        "kind": chart_kind
+                    }
+                else:
+                    # Fallback to original structure
+                    result = {
+                        "type": "chart", 
+                        "title": chart_title,
+                        "chart_data": {
+                            "labels": labels,
+                            "values": series_data,  # Dictionary of series_name: values
+                            "y": y_columns,  # Array of column names
+                            "x_axis": x_column,
+                            "y_axis": "Total Sales (value)",
+                            "multi_series": True
+                        },
+                        "kind": chart_kind
+                    }
+            else:
+                # For stacked_bar charts, use original structure
+                result = {
+                    "type": "chart", 
+                    "title": chart_title,
+                    "chart_data": {
+                        "labels": labels,
+                        "values": series_data,  # Dictionary of series_name: values
+                        "y": y_columns,  # Array of column names
+                        "x_axis": x_column,
+                        "y_axis": "Total Sales (value)",
+                        "multi_series": True
+                    },
+                    "kind": chart_kind
+                }
             
             print(f"[CHART HANDLER] Multi-series output: {result}")
             return result
+            
+        # Handle single y-column but with division data (like the division chart)
+        elif chart_kind == "line" and len(y_columns) == 1:
+            # Check if this is a division chart (has division column)
+            division_col = None
+            for col in columns:
+                if 'division' in col.lower():
+                    division_col = col
+                    break
+            
+            if division_col:
+                # This is a division chart - restructure data for legends
+                division_data = {}
+                division_names = []
+                unique_labels = []
+                
+                # Get unique months/labels first
+                x_index = normalized_cols.index(x_column.lower())
+                for row in rows:
+                    label = str(row[x_index]) if row[x_index] is not None else "N/A"
+                    if label not in unique_labels:
+                        unique_labels.append(label)
+                
+                # Group data by division
+                div_index = normalized_cols.index(division_col.lower())
+                y_index = normalized_cols.index(y_columns[0].lower())
+                
+                for row in rows:
+                    division = str(row[div_index]) if row[div_index] else "Unknown"
+                    if division not in division_data:
+                        division_data[division] = [0] * len(unique_labels)
+                        division_names.append(division)
+                    
+                    # Find the month index
+                    label = str(row[x_index]) if row[x_index] is not None else "N/A"
+                    if label in unique_labels:
+                        month_index = unique_labels.index(label)
+                        sales_value = float(row[y_index]) if row[y_index] is not None else 0
+                        division_data[division][month_index] = sales_value
+                
+                # Restructure for frontend
+                result = {
+                    "type": "chart", 
+                    "title": chart_title,
+                    "chart_data": {
+                        "labels": unique_labels,
+                        "values": division_data,  # Dictionary of division_name: values
+                        "y": division_names,  # Array of division names for legend
+                        "x_axis": x_column,
+                        "y_axis": "Total Sales (value)",
+                        "multi_series": True
+                    },
+                    "kind": "multi_line"  # Force multi_line for proper legend handling
+                }
+                
+                print(f"[CHART HANDLER] Division chart output: {result}")
+                return result
+            else:
+                # Standard single y-column chart
+                y_index = normalized_cols.index(y_columns[0].lower())
+                values = []
+                
+                for row in rows:
+                    try:
+                        value = float(row[y_index]) if row[y_index] is not None else 0
+                        values.append(value)
+                    except (ValueError, TypeError):
+                        values.append(0)
+                
+                result = {
+                    "type": "chart", 
+                    "title": chart_title,
+                    "chart_data": {
+                        "labels": labels,
+                        "values": values,
+                        "x_axis": x_column,
+                        "y_axis": y_columns[0],
+                        "multi_series": False
+                    },
+                    "kind": chart_kind
+                }
+                
+                print(f"[CHART HANDLER] Single series output: {result}")
+                return result
             
         else:
             # Single-series chart (original logic)
@@ -267,6 +408,30 @@ def handle_chart(response):
                 "y_axis": y_column,
                 "multi_series": False
             }
+            
+            # Special handling for pie charts to prevent line overlap
+            if chart_kind == "pie":
+                # Limit pie charts to top 8 brands to prevent crowded lines
+                if len(labels) > 8:
+                    # Sort by values and take top 8
+                    sorted_data = sorted(zip(labels, values), key=lambda x: x[1], reverse=True)
+                    top_labels, top_values = zip(*sorted_data[:8])
+                    
+                    # Add "Others" category for remaining brands
+                    remaining_total = sum(values) - sum(top_values)
+                    if remaining_total > 0:
+                        top_labels = list(top_labels) + ["Others"]
+                        top_values = list(top_values) + [remaining_total]
+                    
+                    labels = top_labels
+                    values = top_values
+                    print(f"[CHART HANDLER] Limited pie chart to top {len(labels)} brands to prevent crowding")
+                
+                # Ensure labels are properly formatted for pie charts
+                chart_data["labels"] = [str(label)[:20] + "..." if len(str(label)) > 20 else str(label) for label in labels]
+                # Add percentage calculations for better display
+                total = sum(values) if values else 1
+                chart_data["percentages"] = [round((v / total) * 100, 1) for v in values]
             
             # Add special data for specific chart types
             if chart_kind == "heatmap":

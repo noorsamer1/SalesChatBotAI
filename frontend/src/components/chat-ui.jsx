@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import "../styles/chat-ui.css";
 import BotMessage from "./bot-message.jsx";
-import StreamingMessage from "./StreamingMessage.jsx"; // 🆕 Import streaming component
+
 import AnalyticsDashboard from "./AnalyticsDashboard.jsx";
 
 function generateChatName(idx) {
@@ -22,9 +22,7 @@ export default function ChatUI({ user, onLogout }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [chatToDelete, setChatToDelete] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false); // 🆕 Prevent duplicate submissions
-  const [isStreaming, setIsStreaming] = useState(false); // 🆕 Streaming state
-  const [streamingQuery, setStreamingQuery] = useState(""); // 🆕 Current streaming query
-  const [useStreaming, setUseStreaming] = useState(false); // 🆕 DISABLE streaming temporarily
+
   const [isMobile, setIsMobile] = useState(false); // 📱 Mobile detection
   const [sidebarOpen, setSidebarOpen] = useState(false); // 📱 Mobile sidebar state
 
@@ -323,93 +321,15 @@ export default function ChatUI({ user, onLogout }) {
     setLoading(false);
   }
 
-  // 🌊 NEW: Streaming message handler
-  async function handleStreamingSend(trimmed) {
-    let chatId = activeChatId;
-    
-    // Create chat if needed
-    if (!chatId) {
-      try {
-        const res = await fetch("http://localhost:8845/chat/conversations", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("futuretec_token")}`,
-          },
-          body: JSON.stringify({}),
-        });
-        if (!res.ok) throw new Error("Failed to create new chat");
-        const data = await res.json();
-        const newChat = { id: data.id, title: data.title || "New Chat", created_at: new Date().toISOString() };
-        setChats(prevChats => [newChat, ...prevChats]);
-        setActiveChatId(newChat.id);
-        setMessages([]);
-        setIsWelcomeMode(false);
-        chatId = newChat.id;
-      } catch (err) {
-        alert("Error: Could not create a new chat.");
-        setIsSubmitting(false);
-        return;
-      }
-    } else {
-      setIsWelcomeMode(false);
-    }
-    
-    // Clear input and add user message
-    setInputValue("");
-    const userMessage = { 
-      id: `user-${Date.now()}`, 
-      sender: "user", 
-      content: trimmed,
-      timestamp: new Date().toISOString()
-    };
-    setMessages((prev) => [...prev, userMessage]);
-    
-    // Start streaming
-    setIsStreaming(true);
-    setStreamingQuery(trimmed);
-    setIsSubmitting(false); // Release lock for streaming
-  }
 
-  // Handle streaming completion
-  function handleStreamingComplete(result) {
-    setIsStreaming(false);
-    setStreamingQuery("");
-    
-    // Add bot message to the conversation
-    const botMessage = {
-      id: `bot-${Date.now()}`,
-      sender: "bot",
-      content: result.data || result.text,
-      timestamp: new Date().toISOString()
-    };
-    
-    setMessages((prev) => [...prev, botMessage]);
-  }
-
-  // Handle streaming error
-  function handleStreamingError(error) {
-    setIsStreaming(false);
-    setStreamingQuery("");
-    setIsSubmitting(false);
-    
-    console.error("Streaming error:", error);
-    alert(`Streaming failed: ${error}`);
-  }
 
   // Auto-create a chat if needed before sending a message
   async function handleSend() {
     const trimmed = inputValue.trim();
-    if (!trimmed || loading || isSubmitting || isStreaming) return; // 🆕 Prevent duplicate submissions
+    if (!trimmed || loading || isSubmitting) return; // Prevent duplicate submissions
     
-    // 🆕 Lock submission to prevent duplicates
+    // Lock submission to prevent duplicates
     setIsSubmitting(true);
-    
-    // 🌊 NEW: Use streaming if enabled
-    if (useStreaming) {
-      await handleStreamingSend(trimmed);
-      return;
-    }
     
     let chatId = activeChatId;
     if (!chatId) {
@@ -557,13 +477,7 @@ export default function ChatUI({ user, onLogout }) {
     return activeChat?.title || "Sales AI Chatbot";
   };
 
-  // Add this helper to send a suggestion immediately
-  function handleSuggestionSend(suggestion) {
-    setInputValue(suggestion);
-    setTimeout(() => {
-      handleSend();
-    }, 0);
-  }
+
 
   return (
     <div className="base">
@@ -594,14 +508,7 @@ export default function ChatUI({ user, onLogout }) {
             Analytics Dashboard
           </button>
           
-          <button 
-            className={`clear-memory ${useStreaming ? 'active' : ''}`} 
-            onClick={() => setUseStreaming(!useStreaming)}
-            title="Toggle streaming mode"
-          >
-            <span className="btn-icon">🌊</span>
-            {useStreaming ? 'Streaming ON' : 'Streaming OFF'}
-          </button>
+
           {/* <button 
             className="clear-memory refresh-btn" 
             onClick={handleRefreshChats}
@@ -674,11 +581,7 @@ export default function ChatUI({ user, onLogout }) {
                     <h3>Smart Visualization</h3>
                     <p>Auto-generated charts and tables</p>
                   </div>
-                  <div className="feature-card">
-                    <span className="feature-icon">⚡</span>
-                    <h3>Real-time Streaming</h3>
-                    <p>Progressive response loading</p>
-                  </div>
+
                   <div className="feature-card">
                     <span className="feature-icon">🧠</span>
                     <h3>Business Intelligence</h3>
@@ -687,61 +590,6 @@ export default function ChatUI({ user, onLogout }) {
                 </div>
               </div>
               
-              <div className="welcome-suggestions">
-                <h3>Try asking:</h3>
-                <div className="suggestion-chips">
-                  <button 
-                    className="suggestion-chip"
-                    onClick={() => handleSuggestionSend("Show me division sales breakdown")}
-                  >
-                    📊 Division Sales Breakdown
-                  </button>
-                  <button 
-                    className="suggestion-chip"
-                    onClick={() => handleSuggestionSend("Top 10 customers by revenue")}
-                  >
-                    👥 Top Customers
-                  </button>
-                  <button 
-                    className="suggestion-chip"
-                    onClick={() => handleSuggestionSend("Sales performance by month")}
-                  >
-                    📈 Monthly Performance
-                  </button>
-                  <button 
-                    className="suggestion-chip"
-                    onClick={() => handleSuggestionSend("Product analysis with profit margins")}
-                  >
-                    🏷️ Product Analysis
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            {/* Always show the chat input bar, centered in welcome mode */}
-            <div className="chatbot-input welcome-input-center">
-              <div className="input-bar">
-                <textarea
-                  className="message-input"
-                  placeholder="Ask me about your sales data, analytics, or reports..."
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={loading}
-                  aria-label="Message input"
-                  autoComplete="off"
-                  rows={1}
-                  style={{ resize: "none" }}
-                />
-                <button
-                  className="send-button"
-                  onClick={handleSend}
-                  aria-label="Send message"
-                  disabled={loading || isSubmitting || !inputValue.trim()} // 🆕 Include isSubmitting
-                >
-                  {loading || isSubmitting ? "⏳" : "🚀"} {/* 🆕 Show loading for both states */}
-                </button>
-              </div>
             </div>
           </div>
         ) : (
@@ -791,20 +639,7 @@ export default function ChatUI({ user, onLogout }) {
                 </div>
               )}
               
-              {/* 🌊 NEW: Streaming component */}
-              {isStreaming && streamingQuery && activeChatId && (
-                <div className="message bot">
-                  <div className="message-avatar">🤖</div>
-                  <div className="bubble">
-                    <StreamingMessage
-                      query={streamingQuery}
-                      conversationId={activeChatId}
-                      onComplete={handleStreamingComplete}
-                      onError={handleStreamingError}
-                    />
-                  </div>
-                </div>
-              )}
+
               
               <div ref={messagesEndRef} />
             </section>

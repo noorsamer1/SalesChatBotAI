@@ -286,13 +286,7 @@ body::before {
     font-size: 14px;
   }
   
-  .welcome-input-center {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-color);
-    padding: 16px;
-    border-top: 1px solid var(--border-color);
-  }
+
 }
 
 /* Tablet optimization */
@@ -1672,44 +1666,7 @@ tbody tr:hover {
   margin: 0;
 }
 
-/* Welcome Suggestions */
-.welcome-suggestions h3 {
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 1.1rem;
-  font-weight: 500;
-  margin-bottom: 1.5rem;
-}
 
-.suggestion-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  justify-content: center;
-  margin-bottom: 2rem;
-}
-
-.suggestion-chip {
-  background: rgba(6, 182, 212, 0.1);
-  border: 1px solid rgba(6, 182, 212, 0.3);
-  border-radius: 25px;
-  color: #06b6d4;
-  padding: 0.8rem 1.5rem;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.suggestion-chip:hover {
-  background: rgba(6, 182, 212, 0.2);
-  border-color: rgba(6, 182, 212, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(6, 182, 212, 0.3);
-}
 
 /* Welcome Input Container */
 .welcome-input-container {
@@ -1807,24 +1764,7 @@ tbody tr:hover {
     gap: 1rem;
   }
   
-  .suggestion-chips {
-    flex-direction: column;
-    align-items: center;
-  }
-  
-  .welcome-input-bar {
-    padding: 0.8rem 1rem;
-  }
-  
-  .welcome-message-input {
-    font-size: 1rem;
-  }
-  
-  .welcome-send-button {
-    width: 45px;
-    height: 45px;
-    font-size: 1.2rem;
-  }
+
 }
 
 /* Animation for transitioning from welcome to chat */
@@ -1990,20 +1930,9 @@ tbody tr:hover {
 }
 
 /* Remove obsolete welcome input styles */
-.welcome-input-container, .welcome-input-bar, .welcome-message-input, .welcome-send-button {
-  display: none !important;
-}
 
-/* Center the chat input bar in welcome mode */
-.welcome-input-center {
-  margin: 32px auto 0 auto;
-  max-width: 600px;
-  width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: static;
-}
+
+
 
 /* In chat mode, .chatbot-input stays sticky at the bottom as before */
 

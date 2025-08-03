@@ -27,13 +27,16 @@ def handle_table(response):
                 limit_value = int(limit_match.group(1))
                 has_reasonable_limit = limit_value <= 50  # Consider LIMIT 50 or less as reasonable
             
-            # Only truncate if no reasonable limit and result is too large
-            if not has_reasonable_limit and len(rows) > 1000:
-                rows = rows[:1000]
-                logger.warning(f"Table truncated to 1000 rows (no LIMIT clause found)")
-                title += " (showing first 1000 rows - consider using LIMIT in query)"
-            elif len(rows) > 0:
-                logger.info(f"Table generated with {len(rows)} rows")
+            # Smart truncation based on business rules
+            if not has_reasonable_limit:
+                if len(rows) > 20:  # Default to top 20 for most queries
+                    rows = rows[:20]
+                    logger.warning(f"Table truncated to 20 rows (no LIMIT clause found)")
+                    title += " (showing top 20 results)"
+                elif len(rows) > 0:
+                    logger.info(f"Table generated with {len(rows)} rows")
+            else:
+                logger.info(f"Table generated with {len(rows)} rows (LIMIT clause present)")
             
             # Convert rows to proper format
             formatted_rows = []
@@ -45,10 +48,26 @@ def handle_table(response):
                     elif isinstance(value, (int, float, Decimal)):
                         # Format based on column name
                         col_name = columns[i].lower()
-                        if any(keyword in col_name for keyword in ['sales', 'revenue', 'profit', 'value', 'amount', 'discount', 'loss', 'return']):
-                            formatted_row.append(format_currency(value))
-                        elif any(keyword in col_name for keyword in ['percent', 'margin', 'rate']):
+                        
+                        # Specific formatting for return rate percentage
+                        if any(keyword in col_name for keyword in ['rate', 'pct', 'percent']) and 'return' in col_name:
                             formatted_row.append(f"{float(value):.1f}%")
+                        # Specific formatting for profit margin percentage
+                        elif any(keyword in col_name for keyword in ['margin', 'pct', 'percent']) and 'profit' in col_name:
+                            formatted_row.append(f"{float(value):.1f}%")
+                        # Specific formatting for return quantity (negative values)
+                        elif any(keyword in col_name for keyword in ['qty', 'quantity']) and 'return' in col_name:
+                            if float(value) < 0:
+                                formatted_row.append(f"{int(value):,}")
+                            else:
+                                formatted_row.append(f"{int(value):,}")
+                        # Currency formatting for monetary values
+                        elif any(keyword in col_name for keyword in ['sales', 'revenue', 'profit', 'value', 'amount', 'discount', 'loss']):
+                            formatted_row.append(format_currency(value))
+                        # Percentage formatting for other percentages
+                        elif any(keyword in col_name for keyword in ['percent', 'margin', 'rate', 'pct']):
+                            formatted_row.append(f"{float(value):.1f}%")
+                        # Quantity formatting for other quantities
                         elif any(keyword in col_name for keyword in ['qty', 'quantity', 'count']):
                             formatted_row.append(f"{int(value):,}")
                         else:
