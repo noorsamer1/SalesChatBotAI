@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.db import get_db
-from backend.app.services.auth_deps import get_current_user
+from app.services.auth_deps import get_current_user
 from app.models.chat import Conversation, Message
 from app.services.openai_service import get_openai_response_fast, get_openai_response_stream_enhanced, enhance_sql_query, validate_response_structure
 from app.services.response_parser import parse_reply
