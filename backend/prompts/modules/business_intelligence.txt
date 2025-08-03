@@ -30,6 +30,16 @@
 - ❌ `SELECT brandname, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data WHERE yy = 2024 GROUP BY brandname ORDER BY total_sales DESC LIMIT 20`
 - ❌ `SELECT customer_name_e, ROUND(SUM(sales_value), 3) as total_return_value, COUNT(*) as return_count FROM sales_data WHERE yy = 2025 AND tran_type = 'Sales Return' GROUP BY customer_name_e ORDER BY total_return_value DESC LIMIT 5`
 - ❌ `SELECT salesman_name_e, ROUND(SUM(sales_prof), 3) as total_profit FROM sales_data WHERE yy = 2025 AND mm = 4 GROUP BY salesman_name_e ORDER BY total_profit DESC LIMIT 5`
+- ❌ `SELECT customer_name_e FROM sales_data WHERE item_name_e = 'Product X'` (NEVER use generic product names)
+
+**🚨 CRITICAL: ALWAYS USE REAL PRODUCT NAMES:**
+- ✅ Use actual product names from database: `item_name_e LIKE '%VALBRESO%'` or `item_name_e LIKE '%McCAIN%'`
+- ✅ For product-specific queries, use: `item_name_e ILIKE '%[PRODUCT_NAME]%'`
+- ✅ Example: `WHERE item_name_e ILIKE '%VALBRESO Feta%'` for specific product
+- ✅ For brand analysis: `WHERE brandname ILIKE '%[BRAND_NAME]%'`
+- ✅ For inactive customer analysis: Use real product names, not "Product X"
+- ✅ **CRITICAL**: When user mentions "Product X", replace with real product names in SQL: `item_name_e ILIKE '%VALBRESO Feta%'` or `item_name_e ILIKE '%McCAIN%'`
+- ✅ **NEVER** use `item_name_e ILIKE '%Product X%'` in SQL queries
 
 **✅ MANDATORY: ALWAYS USE THESE COMPREHENSIVE FORMATS:**
 - ✅ Customer Revenue: `SELECT customer_name_e, ROUND(SUM(sales_value), 3) as total_revenue, ROUND(SUM(sales_qty), 0) as sales_quantity, ROUND(SUM(sales_value)/NULLIF(COUNT(*),0), 3) as avg_order_value, MAX(job_date) as last_purchase_date FROM sales_data WHERE yy = 2025 AND tran_type = 'Sales' GROUP BY customer_name_e ORDER BY total_revenue DESC LIMIT 10`

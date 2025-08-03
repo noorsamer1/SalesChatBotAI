@@ -167,7 +167,6 @@ Response:
   }
 ]
 ```
-```
 
 **Example 5: Monthly Trends Chart**
 User: "monthly trends for 2024"
@@ -262,11 +261,7 @@ Response:
     "title": "Division Performance Analysis (2025)",
     "code": "SELECT division_name, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) as profit_margin_pct, COUNT(DISTINCT customer_name_e) as unique_customers, COUNT(*) as transaction_count FROM sales_data WHERE yy = 2025 GROUP BY division_name ORDER BY total_sales DESC"
   },
-  {
-    "type": "text",
-    "template": "📊 **Dashboard Summary:**\n\n🎯 **Key Performance Indicators:**\n• Total Sales YTD: $18.9M\n• Average Monthly Growth: +12.3%\n• Top Division: COOPS ($6.6M)\n• Best Product: VALBRESO Feta ($481K)\n\n💡 **Strategic Insights:**\n• COOPS division leads with highest sales and customer count\n• VALBRESO products show strong profitability\n• HORECA division has good profit margins\n• Traditional Trade shows steady performance\n\n🔍 **Recommendations:**\n• Focus on expanding COOPS customer base\n• Increase VALBRESO product distribution\n• Optimize HORECA profit margins\n• Develop Traditional Trade growth strategies",
-    "value_code": ""
-  }
+
 ]
 ```
 
@@ -353,3 +348,36 @@ Response:
   }
 ]
 ``` 
+
+**Example 10: Inactive Customer Analysis**
+User: "Which customers purchased VALBRESO Feta but haven't made any purchases in the last 3 months?"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Analyzing customer purchase behavior for VALBRESO Feta to identify clients who have not made any purchases in the last 3 months. This analysis helps in understanding customer engagement and potential reactivation strategies.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Inactive Customers for VALBRESO Feta (Last 3 Months)",
+    "code": "WITH recent_customers AS (SELECT customer_name_e, MAX(job_date) as last_purchase_date FROM sales_data WHERE item_name_e ILIKE '%VALBRESO Feta%' GROUP BY customer_name_e), inactive_customers AS (SELECT customer_name_e FROM recent_customers WHERE last_purchase_date < CURRENT_DATE - INTERVAL '3 months') SELECT customer_name_e, last_purchase_date FROM recent_customers WHERE customer_name_e IN (SELECT customer_name_e FROM inactive_customers) ORDER BY last_purchase_date DESC"
+  },
+  {
+    "type": "text",
+    "template": "📊 **Key Insights:**\n\n🔍 **Inactive Customer Analysis:**\n• Identified customers who previously purchased VALBRESO Feta but haven't bought in 3+ months\n• Last purchase dates help prioritize re-engagement efforts\n• Customer names can be used for targeted marketing campaigns\n\n💡 **Strategic Recommendations:**\n• Implement targeted re-engagement campaigns for these customers\n• Offer special promotions or discounts to reactivate purchases\n• Analyze reasons for inactivity to improve product offerings\n• Consider customer feedback to enhance product appeal",
+    "value_code": ""
+  }
+]
+```
+
+
+
+**🚨 CRITICAL: PRODUCT NAME REPLACEMENT RULE:**
+When user mentions "Product X" in any query, ALWAYS replace it with real product names in SQL:
+- Use `item_name_e ILIKE '%VALBRESO Feta%'` or `item_name_e ILIKE '%McCAIN%'`
+- NEVER use `item_name_e ILIKE '%Product X%'` in SQL queries
+- This applies to ALL queries including customer analysis, brand analysis, etc.
+
+ 

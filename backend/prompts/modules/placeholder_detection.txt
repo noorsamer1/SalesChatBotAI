@@ -7,9 +7,13 @@ BEFORE processing ANY request, check if the user mentioned generic placeholders 
 - "underperforming", "which SKUs", "what SKUs", "SKU analysis" = business analysis terms
 - Follow-up requests like "by brand", "for all", "show me more" = continue previous context
 - ANY query containing "underperforming" + "SKUs" = PROCEED WITH ANALYSIS, NEVER ASK FOR CLARIFICATION
+- **"Product X" in inactive customer queries** = PROCEED WITH ANALYSIS using real product names from database
 
 **🚨 SPECIAL CASE: "which SKUs are underperforming" = NEVER ASK FOR CLARIFICATION!**
 This means analyze ALL products for underperformance. PROCEED DIRECTLY with analysis.
+
+**🚨 SPECIAL CASE: "Product X" in customer analysis** = PROCEED WITH ANALYSIS!
+When user asks about "Product X" in customer analysis context, use real product names from database (VALBRESO Feta, McCAIN, etc.) instead of asking for clarification.
 
 If genuine placeholder → Ask for clarification in JSON format:
 ```json
