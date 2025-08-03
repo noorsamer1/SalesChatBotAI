@@ -299,15 +299,33 @@ export default function ChartMessage({ data }) {
             }
         }));
     } else if (kind === "pie") {
-        // Traditional pie chart
+        // Traditional pie chart with improved formatting
+        const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#42a5f5', '#26c6da', '#66bb6a', '#ffa726', '#ab47bc'];
+        
+        // Special color for "Others" category
+        const pieColors = chart_data.labels.map((label, index) => {
+            if (label === "Others") {
+                return '#6b7280'; // Gray color for Others
+            }
+            return colors[index % colors.length];
+        });
+        
         plotData = [{
             type: "pie",
             labels: chart_data.labels,
             values: chart_data.values,
             hole: 0, // No hole for pie
             marker: {
-                colors: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe']
-            }
+                colors: pieColors
+            },
+            textinfo: 'label+percent',
+            textposition: 'outside',
+            textfont: { size: 10, color: "#ffffff" },
+            outsidetextfont: { size: 10, color: "#ffffff" },
+            pull: 0.01, // Slight pull for better separation
+            rotation: 0,
+            hoverinfo: 'label+percent+value',
+            hovertemplate: '<b>%{label}</b><br>Value: %{value:,.0f}<br>Share: %{percent:.1f}%<extra></extra>'
         }];
     } else if (kind === "donut") {
         // Modern donut chart (professional)
@@ -451,13 +469,46 @@ export default function ChartMessage({ data }) {
         layout.showlegend = true;
         layout.legend = {
             orientation: "v",
-            x: 1,
+            x: 1.02,
             y: 0.5,
-            bgcolor: "rgba(31, 41, 55, 0.8)",
+            xanchor: "left",
+            yanchor: "middle",
+            bgcolor: "rgba(31, 41, 55, 0.9)",
             bordercolor: "#4b5563",
             borderwidth: 1,
-            font: { color: "#ffffff", size: 12 }
+            font: { color: "#ffffff", size: 11 }
         };
+        // Increase top margin to prevent title overlap
+        layout.margin = { t: 100, r: 200, b: 80, l: 80 };
+        // Ensure title is visible and properly positioned
+        layout.title = {
+            text: title || "Chart",
+            font: { color: "#ffffff", size: 18, family: "Inter, sans-serif" },
+            pad: { t: 20, b: 20 },
+            x: 0.5,
+            y: 0.95,
+            xanchor: "center",
+            yanchor: "top"
+        };
+        // Configure pie chart to prevent line overlap
+        if (kind === "pie") {
+            layout.pie = {
+                textinfo: "label+percent",
+                textposition: "outside",
+                textfont: { size: 10, color: "#ffffff" },
+                outsidetextfont: { size: 10, color: "#ffffff" },
+                pull: 0.01, // Slight pull for better separation
+                rotation: 0
+            };
+            // Increase right margin for legend and prevent line overlap
+            layout.margin.r = 250;
+            // Configure hover template to show more info
+            layout.hoverlabel = {
+                bgcolor: "rgba(31, 41, 55, 0.9)",
+                bordercolor: "#4b5563",
+                font: { color: "#ffffff", size: 12 }
+            };
+        }
     } else if (kind === "heatmap") {
         // Heatmap specific layout
         layout.xaxis = {
@@ -526,12 +577,15 @@ export default function ChartMessage({ data }) {
         layout.barmode = kind === "stacked_bar" ? "stack" : undefined;
         layout.showlegend = true;
         layout.legend = {
-            x: 0.02,
-            y: 0.98,
-            bgcolor: "rgba(31, 41, 55, 0.8)",
+            x: 1.02,
+            y: 1,
+            xanchor: "left",
+            yanchor: "top",
+            bgcolor: "rgba(31, 41, 55, 0.9)",
             bordercolor: "#4b5563",
             borderwidth: 1,
-            font: { color: "#ffffff", size: 12 }
+            font: { color: "#ffffff", size: 12 },
+            orientation: "v"
         };
         layout.hovermode = "x unified";
     } else if (kind === "waterfall") {
@@ -581,12 +635,15 @@ export default function ChartMessage({ data }) {
         };
         layout.showlegend = isMultiSeries;
         layout.legend = isMultiSeries ? {
-            x: 0.02,
-            y: 0.98,
-            bgcolor: "rgba(31, 41, 55, 0.8)",
+            x: 1.02,
+            y: 1,
+            xanchor: "left",
+            yanchor: "top",
+            bgcolor: "rgba(31, 41, 55, 0.9)",
             bordercolor: "#4b5563",
             borderwidth: 1,
-            font: { color: "#ffffff", size: 12 }
+            font: { color: "#ffffff", size: 12 },
+            orientation: "v"
         } : undefined;
         layout.hovermode = "x unified";
         

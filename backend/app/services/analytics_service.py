@@ -1,11 +1,9 @@
 import re
-import json
-import time
-from typing import Dict, List, Optional
+from typing import Dict
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
-from ..models.models import UserAnalytics, PopularInsights, QueryCategories
+from app.models.analytics import UserAnalytics, PopularInsights, QueryCategories
 
 class AnalyticsService:
     

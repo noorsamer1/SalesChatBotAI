@@ -1,5 +1,18 @@
 **📋 RESPONSE FORMAT RULES & EXAMPLES:**
 
+**🚨 CRITICAL: ALWAYS USE COMPREHENSIVE KPI FORMATS**
+- **NEVER** generate simple 2-column tables
+- **ALWAYS** include 4-5 comprehensive KPI columns
+- **Customer Revenue queries**: MUST include Total Revenue, Sales Quantity, Average Order Value, Last Purchase Date
+- **Customer Returns queries**: MUST include Total Return Value, Return Quantity, Return Rate %, Last Return Date
+- **Brand Analysis queries**: MUST include Total Sales, Sales Quantity, Total Profit, Profit Margin %
+
+**🚨 CRITICAL: CHART FORMATTING REQUIREMENTS**
+- **Pie Charts**: LIMIT to top 8 items to prevent crowded lines and ensure readability
+- **Brand Mix Analysis**: Show top 8 brands + "Others" category for remaining brands
+- **Chart Titles**: Must be specific and descriptive
+- **Chart Insights**: ALWAYS include 1-line conclusion after chart highlighting key trends
+
 **🚨 MANDATORY JSON STRUCTURE:**
 Every response MUST be valid JSON array: `[{"type": "text"}, {"type": "table/chart"}]`
 
@@ -60,7 +73,7 @@ Response:
   {
     "type": "table",
     "title": "Top 10 Salespeople by Performance (2025)",
-    "code": "SELECT salesman_name_e, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, COUNT(DISTINCT customer_name_e) as customers_served FROM sales_data WHERE yy = 2025 GROUP BY salesman_name_e ORDER BY total_sales DESC LIMIT 10"
+    "code": "SELECT salesman_name_e, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, COUNT(DISTINCT customer_name_e) as customers_served, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct FROM sales_data WHERE yy = 2025 GROUP BY salesman_name_e ORDER BY total_sales DESC LIMIT 10"
   }
 ]
 ```
@@ -81,6 +94,79 @@ Response:
     "code": "SELECT brandname, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 3) as total_sales, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END), 0) as total_volume, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END), 3) as return_loss, ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END), 0)) * 100, 1) as return_rate_pct, COUNT(DISTINCT customer_name_e) as unique_customers FROM sales_data WHERE yy = 2024 GROUP BY brandname HAVING SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END) > 0 ORDER BY total_sales DESC LIMIT 10"
   }
 ]
+```
+
+**Example 5: Customer Revenue Analysis**
+User: "Top 10 customers by revenue"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive customer revenue analysis for 2025 identifying top revenue-generating clients with detailed performance metrics including sales quantity, average order value, and recent purchase activity.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Top 10 Customers by Revenue - Complete KPI Analysis (2025)",
+    "code": "SELECT customer_name_e, ROUND(SUM(sales_value), 3) as total_revenue, ROUND(SUM(sales_qty), 0) as sales_quantity, ROUND(SUM(sales_value)/NULLIF(COUNT(*),0), 3) as avg_order_value, MAX(job_date) as last_purchase_date FROM sales_data WHERE yy = 2025 AND tran_type = 'Sales' GROUP BY customer_name_e ORDER BY total_revenue DESC LIMIT 10"
+  }
+]
+```
+
+**Example 6: Customer Returns Analysis**
+User: "Top 5 customers return"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive customer returns analysis for 2025 identifying clients with highest return rates and return values, providing insights for quality improvement and customer relationship management.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Top 5 Customers by Sales Returns - Complete KPI Analysis (2025)",
+    "code": "WITH customer_totals AS (SELECT customer_name_e, SUM(CASE WHEN tran_type = 'Sales' THEN sales_value ELSE 0 END) as total_sales, SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_value) ELSE 0 END) as total_returns, SUM(CASE WHEN tran_type = 'Sales Return' THEN sales_qty ELSE 0 END) as return_qty, MAX(CASE WHEN tran_type = 'Sales Return' THEN job_date END) as last_return_date FROM sales_data WHERE yy = 2025 GROUP BY customer_name_e) SELECT customer_name_e, ROUND(total_returns, 3) as total_return_value, ROUND(return_qty, 0) as return_quantity, ROUND(total_returns/NULLIF(total_sales,0)*100, 1) as return_rate_pct, last_return_date FROM customer_totals WHERE total_returns > 0 ORDER BY total_return_value DESC LIMIT 5"
+  }
+]
+```
+
+**Example 7: Customer Profit Analysis**
+User: "Which customer make the worst profit?"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive customer profitability analysis for 2025 identifying customers with the lowest profit performance, providing insights for cost management and profitability improvement strategies.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Bottom 10 Customers by Profit Performance - Complete KPI Analysis (2025)",
+    "code": "SELECT customer_name_e, ROUND(SUM(sales_value), 3) as total_revenue, ROUND(SUM(sales_value - sales_prof), 3) as total_cost, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct, ROUND(SUM(sales_qty), 0) as sales_quantity FROM sales_data WHERE yy = 2025 GROUP BY customer_name_e ORDER BY total_profit ASC LIMIT 10"
+  }
+]
+```
+
+**Example 8: Sales Representative Analysis**
+User: "Which sales representative generated the most profit last month?"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Comprehensive sales representative performance analysis for April 2025 identifying top performers by profit generation, providing insights for sales team management and incentive planning.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Top Sales Representatives by Profit Performance - Complete KPI Analysis (April 2025)",
+    "code": "SELECT salesman_name_e, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof/NULLIF(sales_value,0)*100), 1) as profit_margin_pct, COUNT(DISTINCT customer_name_e) as customers_served, ROUND(SUM(sales_qty), 0) as total_quantity FROM sales_data WHERE yy = 2025 AND mm = 4 GROUP BY salesman_name_e ORDER BY total_profit DESC LIMIT 10"
+  }
+]
+```
 ```
 
 **Example 5: Monthly Trends Chart**
@@ -104,26 +190,166 @@ Response:
 ]
 ```
 
-**Example 5: Promotional Campaigns Analysis**
+**Example 6: Multi-Line Division Chart**
+User: "Compare monthly sales trends across all divisions"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "This analysis compares monthly sales trends across all divisions for 2025, providing insights into performance variations and identifying potential growth opportunities. Understanding these trends can help in strategic planning and resource allocation.",
+    "value_code": ""
+  },
+  {
+    "type": "chart",
+    "title": "Monthly Sales Trends by Division (2025)",
+    "code": "SELECT CASE mm WHEN 1 THEN 'January' WHEN 2 THEN 'February' WHEN 3 THEN 'March' WHEN 4 THEN 'April' WHEN 5 THEN 'May' WHEN 6 THEN 'June' WHEN 7 THEN 'July' WHEN 8 THEN 'August' WHEN 9 THEN 'September' WHEN 10 THEN 'October' WHEN 11 THEN 'November' WHEN 12 THEN 'December' END as month, CASE WHEN warehouse_name = 'WH1' THEN 'Main Distribution Center' WHEN warehouse_name = 'WH2' THEN 'Central Kuwait Branch' WHEN warehouse_name = 'WH4' THEN 'Kuwait City Branch' WHEN warehouse_name = 'KPC-MAIN' THEN 'KPC Main Warehouse' WHEN warehouse_name = 'CTE' THEN 'Central Trade Exchange' WHEN warehouse_name = 'BUR' THEN 'Burgan Branch' WHEN warehouse_name = 'SRWH' THEN 'South Region Warehouse' WHEN warehouse_name = 'GRVWH' THEN 'Greater Region Warehouse' WHEN warehouse_name = 'W5N' THEN 'West 5N Branch' ELSE warehouse_name END as division, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data WHERE yy = 2025 GROUP BY mm, warehouse_name ORDER BY mm, warehouse_name",
+    "x": "month",
+    "y": ["total_sales"],
+    "kind": "line"
+  },
+  {
+    "type": "text",
+    "template": "📊 Key Insight: Main Distribution Center peaked in January, but all divisions showed a mid-year slowdown. Central Kuwait Branch maintained consistent growth throughout the period.",
+    "value_code": ""
+  }
+]
+```
+
+**Example 7: Shelf Life Analysis**
+User: "Show me items that were sold outside their normal shelf life range"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "Analyzing items sold outside their normal shelf life range for 2025. This analysis helps identify potential quality issues and inventory management challenges, ensuring that products meet safety and quality standards.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Items Sold Outside Normal Shelf Life Range (2025)",
+    "code": "SELECT item_code, item_name_e, warehouse_name as division, job_date as sale_date, shelf_life, ROUND(sales_qty, 0) as sales_quantity, ROUND(sales_value, 3) as total_sales_value, customer_name_e FROM sales_data WHERE yy = 2025 AND shelf_life IS NOT NULL AND shelf_life > 0 AND job_date IS NOT NULL ORDER BY job_date DESC LIMIT 20"
+  }
+]
+```
+
+**Example 8: Comprehensive Sales Dashboard**
+User: "Create a comprehensive sales dashboard showing monthly trends, top products, and division performance"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "📊 Comprehensive Sales Dashboard Analysis (2025)\n\nThis dashboard provides a complete overview of sales performance across multiple dimensions:\n\n🔍 **Key Insights:**\n• Monthly sales trends and seasonality patterns\n• Top-performing products by revenue and profit\n• Division performance comparison\n• Growth metrics and opportunities\n\n📈 **Dashboard Sections:**\n1. Monthly Sales Trends (Time Series Chart)\n2. Top Products Performance (Bar Chart)\n3. Division Performance Analysis (Table)\n4. Key Performance Indicators\n\nThis analysis helps identify growth opportunities, seasonal patterns, and strategic focus areas.",
+    "value_code": ""
+  },
+  {
+    "type": "chart",
+    "title": "Monthly Sales Trends (2025)",
+    "code": "SELECT TO_CHAR(TO_DATE(mm::text, 'MM'), 'Mon') as month_name, ROUND(SUM(sales_value), 3) as total_sales FROM sales_data WHERE yy = 2025 GROUP BY mm ORDER BY mm",
+    "x": "month_name",
+    "y": ["total_sales"],
+    "kind": "line"
+  },
+  {
+    "type": "table",
+    "title": "Top 10 Products by Sales Performance (2025)",
+    "code": "SELECT item_name_e as product_name, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_qty), 0) as sales_quantity, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) as profit_margin_pct FROM sales_data WHERE yy = 2025 GROUP BY item_name_e ORDER BY total_sales DESC LIMIT 10"
+  },
+  {
+    "type": "table",
+    "title": "Division Performance Analysis (2025)",
+    "code": "SELECT division_name, ROUND(SUM(sales_value), 3) as total_sales, ROUND(SUM(sales_prof), 3) as total_profit, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) as profit_margin_pct, COUNT(DISTINCT customer_name_e) as unique_customers, COUNT(*) as transaction_count FROM sales_data WHERE yy = 2025 GROUP BY division_name ORDER BY total_sales DESC"
+  },
+  {
+    "type": "text",
+    "template": "📊 **Dashboard Summary:**\n\n🎯 **Key Performance Indicators:**\n• Total Sales YTD: $18.9M\n• Average Monthly Growth: +12.3%\n• Top Division: COOPS ($6.6M)\n• Best Product: VALBRESO Feta ($481K)\n\n💡 **Strategic Insights:**\n• COOPS division leads with highest sales and customer count\n• VALBRESO products show strong profitability\n• HORECA division has good profit margins\n• Traditional Trade shows steady performance\n\n🔍 **Recommendations:**\n• Focus on expanding COOPS customer base\n• Increase VALBRESO product distribution\n• Optimize HORECA profit margins\n• Develop Traditional Trade growth strategies",
+    "value_code": ""
+  }
+]
+```
+
+**Example 5: Enhanced Promotional Campaigns Analysis**
 User: "Analyze the effectiveness of our promotional campaigns by comparing sales and profit margins for promo vs. non-promo items"
 Response:
 ```json
 [
   {
     "type": "text",
-    "template": "Analyzing the effectiveness of promotional campaigns by comparing sales and profit margins for promotional vs non-promotional items. This analysis helps evaluate the impact of promotional strategies on sales volume and profitability.",
+    "template": "Analyzing the effectiveness of promotional campaigns by comparing comprehensive KPIs for promotional vs non-promotional items. This analysis provides deep insights into promotional strategy impact on sales volume, profitability, pricing, and customer behavior.",
     "value_code": ""
   },
   {
     "type": "table", 
-    "title": "Promotional vs Non-Promotional Sales Analysis (2025)",
-    "value_code": "SELECT CASE WHEN promo = 'Y' THEN 'Promotional' ELSE 'Non-Promotional' END AS promo_status, ROUND(SUM(sales_value), 3) AS total_sales, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) AS profit_margin_pct, COUNT(*) AS transaction_count FROM sales_data WHERE yy = 2025 GROUP BY promo_status ORDER BY total_sales DESC"
+    "title": "Comprehensive Promotional Campaign Analysis (2025)",
+    "value_code": "SELECT CASE WHEN promo = 'Y' THEN 'Promotional' ELSE 'Non-Promotional' END AS promo_status, ROUND(SUM(sales_value), 3) AS total_sales_value, ROUND(SUM(sales_qty), 0) AS sales_quantity, ROUND(SUM(sales_prof), 3) AS total_profit, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) AS profit_margin_pct, ROUND(AVG(sales_value / NULLIF(sales_qty, 0)), 2) AS avg_selling_price, COUNT(*) AS transaction_count, COUNT(DISTINCT customer_name_e) AS unique_customers FROM sales_data WHERE yy = 2025 GROUP BY promo_status ORDER BY total_sales_value DESC"
+  },
+  {
+    "type": "table",
+    "title": "Return Rate Analysis - Promotional vs Non-Promotional (2025)",
+    "value_code": "SELECT CASE WHEN promo = 'Y' THEN 'Promotional' ELSE 'Non-Promotional' END AS promo_status, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END), 0) AS sold_quantity, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_qty) ELSE 0 END), 0) AS returned_quantity, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_qty) ELSE 0 END) * 100.0 / NULLIF(SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END), 0), 1) AS return_rate_pct FROM sales_data WHERE yy = 2025 GROUP BY promo_status ORDER BY return_rate_pct DESC"
+  },
+  {
+    "type": "chart",
+    "title": "Sales Value Comparison - Promotional vs Non-Promotional (2025)",
+    "code": "SELECT CASE WHEN promo = 'Y' THEN 'Promotional' ELSE 'Non-Promotional' END AS category, ROUND(SUM(sales_value) / 1000000, 2) AS sales_millions FROM sales_data WHERE yy = 2025 GROUP BY promo ORDER BY sales_millions DESC",
+    "x": "category",
+    "y": ["sales_millions"],
+    "kind": "bar"
+  },
+  {
+    "type": "text",
+    "template": "📊 Key Insights: Promotional items show higher profit margins (27.4% vs 16.6%) but lower average selling prices (12.14 vs 17.08), indicating effective discounting strategies. Return rates are slightly higher for promotional items (5.1% vs 4.9%), suggesting potential quality concerns or impulse purchases. The analysis reveals that promotional campaigns are driving higher profitability despite lower unit prices.",
+    "value_code": ""
   }
 ]
-```
 
 **Critical Format Rules:**
 - NEVER return tables without business context text
 - ALWAYS include both text analysis AND data visualization
 - Use proper SQL with LIMIT clauses for readability
-- Include strategic insights in text blocks 
+- Include strategic insights in text blocks
+
+**Example 9: Comprehensive Salesmen Performance Analysis**
+User: "Which salesmen is the top performers in sales, volume, growth, margin, against target, returns in 2024"
+Response:
+```json
+[
+  {
+    "type": "text",
+    "template": "📊 Comprehensive Salesmen Performance Analysis (2024)\n\nThis analysis evaluates salesmen performance across multiple key performance indicators including sales value, volume, year-over-year growth, profit margins, target achievement, and return rates. The analysis provides insights into individual performance and identifies top performers in each category.\n\n🔍 **Analysis Categories:**\n• Total Sales Performance\n• Sales Volume Analysis\n• Year-over-Year Growth\n• Profit Margin Comparison\n• Target Achievement Rates\n• Return Rate Analysis\n\nThis comprehensive evaluation helps identify top performers and areas for improvement across all critical sales metrics.",
+    "value_code": ""
+  },
+  {
+    "type": "table",
+    "title": "Salesmen Performance Summary - All KPIs (2024)",
+    "code": "WITH salesmen_2024 AS (SELECT salesman_name_e, ROUND(SUM(sales_value), 3) as total_sales_2024, ROUND(SUM(sales_qty), 0) as sales_volume_2024, ROUND(SUM(sales_prof), 3) as total_profit_2024, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) as profit_margin_2024, COUNT(DISTINCT customer_name_e) as unique_customers_2024, COUNT(*) as transaction_count_2024, ROUND(SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END), 0) as sold_qty_2024, ROUND(SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_qty) ELSE 0 END), 0) as returned_qty_2024 FROM sales_data WHERE yy = 2024 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e), salesmen_2023 AS (SELECT salesman_name_e, ROUND(SUM(sales_value), 3) as total_sales_2023, ROUND(SUM(sales_qty), 0) as sales_volume_2023 FROM sales_data WHERE yy = 2023 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e) SELECT s24.salesman_name_e as salesman_name, s24.total_sales_2024 as total_sales, s24.sales_volume_2024 as sales_volume, s24.total_profit_2024 as total_profit, s24.profit_margin_2024 as profit_margin_pct, CASE WHEN s23.total_sales_2023 IS NULL OR s23.total_sales_2023 = 0 THEN NULL ELSE ROUND(((s24.total_sales_2024 - s23.total_sales_2023) / s23.total_sales_2023 * 100), 1) END as yoy_growth_pct, ROUND((s24.total_sales_2024 / (SELECT SUM(sales_value) FROM sales_data WHERE yy = 2024) * 100), 1) as target_achievement_pct, CASE WHEN s24.sold_qty_2024 = 0 THEN NULL ELSE ROUND((s24.returned_qty_2024 / s24.sold_qty_2024 * 100), 1) END as return_rate_pct FROM salesmen_2024 s24 LEFT JOIN salesmen_2023 s23 ON s24.salesman_name_e = s23.salesman_name_e WHERE s24.total_sales_2024 > 0 ORDER BY s24.total_sales_2024 DESC LIMIT 15"
+  },
+  {
+    "type": "table",
+    "title": "Top Sales Value Performers (2024)",
+    "code": "SELECT salesman_name_e as top_performer, ROUND(SUM(sales_value), 3) as value FROM sales_data WHERE yy = 2024 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e HAVING SUM(sales_value) > 0 ORDER BY SUM(sales_value) DESC LIMIT 3"
+  },
+  {
+    "type": "table",
+    "title": "Top Sales Volume Performers (2024)",
+    "code": "SELECT salesman_name_e as top_performer, ROUND(SUM(sales_qty), 0) as value FROM sales_data WHERE yy = 2024 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e HAVING SUM(sales_value) > 0 ORDER BY SUM(sales_qty) DESC LIMIT 3"
+  },
+  {
+    "type": "table",
+    "title": "Top Profit Margin Performers (2024)",
+    "code": "SELECT salesman_name_e as top_performer, ROUND(AVG(sales_prof / NULLIF(sales_value, 0) * 100), 1) as value FROM sales_data WHERE yy = 2024 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e HAVING SUM(sales_value) > 0 AND AVG(sales_prof / NULLIF(sales_value, 0) * 100) > 0 ORDER BY AVG(sales_prof / NULLIF(sales_value, 0) * 100) DESC LIMIT 3"
+  },
+  {
+    "type": "table",
+    "title": "Lowest Return Rate Performers (2024)",
+    "code": "SELECT salesman_name_e as top_performer, CASE WHEN SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END) = 0 THEN 0 ELSE ROUND((SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_qty) ELSE 0 END) / SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END) * 100), 1) END as value FROM sales_data WHERE yy = 2024 AND salesman_name_e IS NOT NULL GROUP BY salesman_name_e HAVING SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END) > 0 ORDER BY (SUM(CASE WHEN tran_type = 'Sales Return' THEN ABS(sales_qty) ELSE 0 END) / SUM(CASE WHEN tran_type = 'Sales' THEN sales_qty ELSE 0 END)) ASC LIMIT 3"
+  },
+  {
+    "type": "text",
+    "template": "📊 **Key Performance Insights:**\n\n🏆 **Top Sales Performers:**\n• Highest revenue generators with comprehensive customer base\n• Strong transaction volume and market penetration\n\n📈 **Growth Leaders:**\n• Salesmen showing significant year-over-year improvement\n• New market expansion and customer acquisition success\n\n💹 **Margin Champions:**\n• Salesmen achieving highest profit margins\n• Effective pricing strategies and cost management\n\n🎯 **Target Achievers:**\n• Salesmen exceeding or meeting assigned targets\n• Consistent performance against company objectives\n\n📉 **Quality Leaders:**\n• Salesmen with lowest return rates\n• High customer satisfaction and product quality\n\n💡 **Strategic Recommendations:**\n• Identify best practices from top performers\n• Develop training programs based on successful strategies\n• Set realistic targets based on historical performance\n• Implement quality control measures to reduce returns",
+    "value_code": ""
+  }
+]
+``` 

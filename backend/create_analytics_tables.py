@@ -5,7 +5,7 @@ Run this once to set up the analytics database tables
 """
 
 from app.core.db import engine
-from app.models.models import Base
+from app.models.__init__ import Base
 
 def create_analytics_tables():
     """Create analytics tables in the database"""
